@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fitwar
+      POSTGRES_PASSWORD: fitwar_local_dev_password
+      POSTGRES_DB: fitwar
+    ports:
+      # Host-side 5433, not 5432: avoids colliding with any Postgres already
+      # running natively on the host. Container-to-container traffic (the api
+      # service) still uses the standard 5432 internally, unaffected by this.
+      - "5433:5432"
+    volumes:
+      - fitwar_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitwar -d fitwar"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      # Host-side 6380 — same collision-avoidance reasoning as postgres above.
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    env_file:
+      - ../backend/.env.local
+    environment:
+      # Overrides env_file: inside the compose network, services are reached by
+      # name, not localhost.
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend/app:/app/app
+      # tests/ is deliberately excluded from the image itself (.dockerignore) to
+      # keep the production build lean; bind-mounted here so `docker compose exec
+      # api pytest` works for local dev without baking test code into the image.
+      - ../backend/tests:/app/tests
+      - ../backend/pyproject.toml:/app/pyproject.toml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  fitwar_postgres_data:
