@@ -12,14 +12,16 @@ Validated against `docs/FITWAR_DESIGN_SPEC.md`. Builds on the Phase 0 architectu
 
 ## Auth
 
+**Status: all rows below are implemented** (Phase 1 built register/login/refresh/logout; Phase 2 added password-reset).
+
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
 | `POST /auth/register` | Public | `{ email, password, display_name }` | `201 { user_id, access_token, refresh_token, expires_in }` | `409 EMAIL_TAKEN` |
 | `POST /auth/login` | Public | `{ email, password }` | `200 { access_token, refresh_token, expires_in }` | `401 INVALID_CREDENTIALS`, `403 ACCOUNT_DELETED` |
 | `POST /auth/refresh` | Public (refresh token in body) | `{ refresh_token }` | `200 { access_token, refresh_token, expires_in }` (rotated) | `401 REFRESH_INVALID`, `401 REFRESH_REUSE_DETECTED` (revokes token family) |
-| `POST /auth/logout` | Required | `{ refresh_token }` | `204` | — |
-| `POST /auth/password-reset/request` | Public | `{ email }` | `202` always (never reveals whether the email exists) — issues a single-use opaque token, hashed and stored in Redis with TTL, delivered via `EmailSender` abstraction | — |
-| `POST /auth/password-reset/confirm` | Public | `{ token, new_password }` | `200`, revokes all existing refresh-token families for the user | `400 RESET_TOKEN_INVALID_OR_EXPIRED` |
+| `POST /auth/logout` | Public (refresh token in body) | `{ refresh_token }` | `204`, revokes just the presented token (not its family — family revocation is reserved for reuse detection). Idempotent: an unknown or already-revoked token still returns `204`, so it never signals whether a token was valid | — |
+| `POST /auth/password-reset/request` | Public | `{ email }` | `202` always (never reveals whether the email exists) — issues a single-use opaque token, hashed and stored in Redis with TTL, delivered via `EmailSender` abstraction (`LoggingEmailSender` in dev — no real provider configured yet) | — |
+| `POST /auth/password-reset/confirm` | Public | `{ token, new_password }` | `200`, revokes all existing refresh tokens for the user | `400 RESET_TOKEN_INVALID_OR_EXPIRED` |
 
 Sign in with Apple: architecture-compatible (`auth_provider` column) but **not implemented in V1** — no `/auth/oauth/apple` endpoint yet. Design spec §20.8: the iOS Login screen ships without an Apple button until this exists.
 
@@ -27,29 +29,48 @@ Design note: onboarding's "I already have an account" now routes to the real Log
 
 ## Me / Profile
 
+**Status:** `GET /me` and `PATCH /me` are implemented (Phase 2, added because Onboarding's profile step and the Profile screen needed somewhere real to read/write). Their shape is **trimmed from the original Phase 0 sketch** — everything else below is still just designed, not built, pending the phases that back it.
+
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /me` | Required | — | `{ id, email, display_name, avatar_media_id, level, xp_total, xp_to_next_level, current_streak, notification_preferences }` | — |
-| `PATCH /me` | Required | `{ display_name?, avatar_media_id?, notification_preferences? }` | `200` updated profile — backs both Account and Notification-preferences sections of Settings (design spec §20.9) | `422` |
-| `DELETE /me` | Required | — | `204` (soft-delete, see Phase 0 §7) | — |
-| `GET /me/xp` | Required | `?cursor=` | paginated `XPTransaction` rows: `{ id, amount, reason_type, reference_type, reference_id, created_at }` | — |
-| `GET /me/achievements` | Required | — | list of `{ achievement_key, name, unlocked_at }` | — |
-| `GET /me/challenge-history` | Required | `?cursor=` | list of `{ challenge_id, name, ended_at, outcome }` — `outcome ∈ {WON, LOST, OUT, LEFT}`, computed per the fixed rule in Architecture §20.3 | — |
-| `POST /me/health-connections` | Required | `{ provider }` (`apple_health` \| `health_connect`) | `201 { connection_id, status }` | `409 ALREADY_CONNECTED` |
-| `DELETE /me/health-connections/{id}` | Required, owner | — | `204` | `404` |
+| `GET /me` ✅ | Required | — | `{ id, email, display_name, avatar_media_id, xp_total, notification_preferences }` — **no `level`/`xp_to_next_level`/`current_streak`**: those need the XP/Streak/Challenge domains, which don't exist yet. Not silently dropped — deliberately deferred | — |
+| `PATCH /me` ✅ | Required | `{ display_name?, notification_preferences? }` — **no `avatar_media_id`**: `MediaAsset` doesn't exist until the Media phase, so there's nothing to set it to yet | `200` updated profile — backs Onboarding's profile step and Settings' future Account/Notification sections (design spec §20.9) | `422` |
+| `DELETE /me` | Required | — | `204` (soft-delete, see Phase 0 §7) — **not yet implemented**, no screen needs it before the Settings phase | — |
+| `GET /me/xp` | Required | `?cursor=` | paginated `XPTransaction` rows | — (not yet implemented — XP phase) |
+| `GET /me/achievements` | Required | — | list of unlocked achievements | — (not yet implemented — Achievements/XP phase) |
+| `GET /me/challenge-history` | Required | `?cursor=` | list of `{ challenge_id, name, ended_at, outcome }` | — (not yet implemented — Challenges phase) |
+| `POST /me/health-connections` | Required | `{ provider }` | `201 { connection_id, status }` | — (not yet implemented — Verification phase; Phase 2 only built the iOS permission-state UI, no backend call) |
+| `DELETE /me/health-connections/{id}` | Required, owner | — | `204` | — (not yet implemented — Verification phase) |
 
 ## Groups
 
+**Status: all rows below are implemented** (Phase 3).
+
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /groups` | Required | — | groups the caller belongs to: `{ id, name, timezone, member_count, active_challenge_count }[]` | — |
-| `POST /groups` | Required | `{ name, timezone }` | `201` group, caller becomes owner | `422` |
-| `GET /groups/{id}` | Required, member | — | group detail | `403 NOT_A_MEMBER` |
-| `PATCH /groups/{id}` | Required, admin | `{ name?, timezone? }` | `200` updated | `403 FORBIDDEN` |
-| `POST /groups/{id}/join` | Required | `{ join_code }` | `200` membership created | `404 INVALID_CODE`, `409 ALREADY_MEMBER`, `409 GROUP_FULL` |
-| `POST /groups/{id}/leave` | Required, member | — | `204` | `409 OWNER_CANNOT_LEAVE` |
-| `GET /groups/{id}/members` | Required, member | — | roster: `{ user_id, display_name, role, status, current_streak, warning_count, is_eliminated_in_active_challenge }[]` (backs the Group→Roster tab) | — |
-| `PATCH /groups/{id}/members/{user_id}` | Required, admin | `{ role? , status? }` | `200` | `403` |
+| `GET /groups` ✅ | Required | — | groups the caller belongs to: `{ id, name, timezone, member_count, active_challenge_count }[]` | — |
+| `POST /groups` ✅ | Required | `{ name, timezone }` | `201` group, caller becomes owner. `timezone` must be an IANA identifier | `400 INVALID_TIMEZONE`, `422` |
+| `GET /groups/{id}` ✅ | Required, member | — | group detail, incl. `join_code` and the caller's `my_role` | `403 NOT_A_MEMBER`, `404 GROUP_NOT_FOUND` |
+| `PATCH /groups/{id}` ✅ | Required, admin | `{ name?, timezone? }` | `200` updated. Editing `timezone` never affects challenges already created — each snapshotted its own copy (Architecture §11) | `403 FORBIDDEN`, `400 INVALID_TIMEZONE` |
+| `POST /groups/join` ✅ **[added]** | Required | `{ join_code }` | `200` membership created, resolved from the code alone | `404 INVALID_CODE`, `409 ALREADY_MEMBER`, `403 MEMBER_REMOVED` |
+| `POST /groups/{id}/join` ✅ | Required | `{ join_code }` | `200` membership created; the code must belong to `{id}`, so a valid code for another group can't open this one | `404 INVALID_CODE`, `409 ALREADY_MEMBER`, `403 MEMBER_REMOVED` |
+| `POST /groups/{id}/leave` ✅ | Required, member | — | `204` | `409 OWNER_CANNOT_LEAVE` |
+| `GET /groups/{id}/members` ✅ | Required, member | — | roster: `{ user_id, display_name, role, status, joined_at, active_challenge_count }[]` — **no `current_streak`/`warning_count`/`is_eliminated_in_active_challenge`**: those need the Streak and Warning domains (Phases 5–6), and zeros would render as real standings | `403 NOT_A_MEMBER` |
+| `PATCH /groups/{id}/members/{user_id}` ✅ | Required, admin | `{ role?, status? }` | `200` | `403 FORBIDDEN`, `403 CANNOT_MODIFY_OWNER` |
+
+**Invite mechanism.** No standalone invite table: `Group.join_code` is a unique 5-character
+code (design shape `K7-XR9`), generated at creation and shown on the Group screen to
+admins. `POST /groups/{id}/join` is the spec'd route and backs invite *links*, which carry
+the group id. `POST /groups/join` was added because the design's JOIN CODE card supports
+typing a code with no group id in hand; both delegate to one service method.
+
+**Rejoin policy** (not specified in Phase 0, decided here): a member whose status is
+`left` may rejoin with a valid code, reactivating their membership. A member whose status
+is `removed` may **not** — removal is an admin moderation decision, and an invite code
+must not route around it; an admin reinstates them via `PATCH .../members/{user_id}`.
+
+**`409 GROUP_FULL` is not implemented** — the frozen `Group` schema has no member-cap
+column and no ADR sets one, so there is no state in which V1 can return it.
 
 ## Chat / Group Feed
 
@@ -57,20 +78,35 @@ Design note: onboarding's "I already have an account" now routes to the real Log
 |---|---|---|---|---|
 | `GET /groups/{id}/messages` | Required, member | `?cursor=` | paginated `{ id, sender_id, content, message_type, media_id, created_at }` (backs Group→Chat tab) | — |
 | `POST /groups/{id}/messages` | Required, member | `{ content }` | `201` message | `429 RATE_LIMITED` |
-| `GET /groups/{id}/activity` | Required, member | `?cursor=` | paginated feed: shared-proof posts + passive activity log entries, merged/sorted by time (backs Group→Feed tab) | — |
+| `GET /groups/{id}/activity` ✅ | Required, member | — | `{ kind, actor_display_name, text, occurred_at }[]` (backs Group→Feed tab). Phase 3 derives this from records it already writes — `member_joined` and `challenge_created` — with **no activity table**. Shared-proof posts need the Media phase and are absent rather than mocked. Not yet paginated: the response is capped at 20 entries, which is below the point where a cursor earns its complexity | `403 NOT_A_MEMBER` |
 | `WS /ws/groups/{id}` | Required, member (JWT on connect) | — | pushes: `chat_message`, `reaction_added`, `leaderboard_updated`, `warning_issued`, `eliminated` | connection rejected if not a member |
 
 ## Challenges
 
+**Status: all rows below are implemented** (Phase 3).
+
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /challenges` | Required | `?scope=mine&status=&group_id=` (no `discover` scope — no public challenge discovery in V1, ADR 0001) | list, same shape as Home/Challenges cards: `{ id, name, meta, status, status_color_hint, progress_label, rank_label, progress_pct }[]` | — |
-| `POST /groups/{id}/challenges` | Required, member | `{ name, activity_type, target_value, unit, game_mode, verification_method, duration_days, participant_limit?, rules: {...} }` | `201` challenge (`timezone` snapshotted from group per Phase 0 §11) | `422`, `403` |
-| `GET /challenges/{id}` | Required, participant-or-group-member | — | full detail incl. today's metric, countdown, verification method, leaderboard preview | `403` |
-| `PATCH /challenges/{id}` | Required, creator/admin, pre-start only | `{ name?, target_value?, rules? }` | `200` | `409 CHALLENGE_ALREADY_ACTIVE` |
-| `POST /challenges/{id}/join` | Required, group member | — | `201` participant created | `409 ALREADY_JOINED`, `409 PARTICIPANT_LIMIT_REACHED` |
-| `POST /challenges/{id}/leave` | Required, participant | — | `204` | `409 CHALLENGE_ALREADY_ENDED` |
-| `GET /challenges/{id}/participants` | Required, participant-or-admin | — | `{ user_id, status, current_score, current_streak }[]` | — |
+| `GET /challenges` ✅ | Required | `?status=&group_id=` — no `scope` parameter: `mine` is the only scope V1 has, so it isn't accepted-and-ignored (ADR 0001) | `{ id, group_id, name, activity_type, game_mode, status, target_value, unit, day_index, duration_days, participant_count, my_status }[]`. **No `progress_pct`/`rank_label`**: both need verified daily values and leaderboard rank, which don't exist until Phases 4–5 | — |
+| `POST /groups/{id}/challenges` ✅ | Required, member | `{ name, activity_type, target_value, unit, game_mode, verification_method, duration_days, participant_limit?, start_at? }` | `201` challenge (`timezone` snapshotted from the group per Phase 0 §11; creator auto-joins as a participant). **No `status` in the request** — the server derives DRAFT vs ACTIVE from `start_at` against the clock | `403 NOT_A_MEMBER`, `409 INVALID_CHALLENGE_CONFIG`, `422` |
+| `GET /groups/{id}/challenges` ✅ | Required, member | — | every challenge in the group, same summary shape as `GET /challenges` (incl. the caller's `my_status`). Backs the Group Detail screen's challenge list, where the scope is the group rather than the caller's own participation — so unlike `GET /challenges`, it lists challenges the caller hasn't joined | `403 NOT_A_MEMBER` |
+| `GET /challenges/{id}` ✅ | Required, participant-or-group-member | — | full detail incl. `failure_rule`, `day_index`, `my_status`, and the participant list. **No leaderboard preview** — every score is 0 until verification exists, so ranking them would present an order that means nothing | `403 NOT_A_PARTICIPANT`, `404 CHALLENGE_NOT_FOUND` |
+| `PATCH /challenges/{id}` ✅ | Required, creator/group-admin, pre-start only | `{ name?, target_value? }` — no `rules`, since V1 writes no `ChallengeRule` rows (ADR 0004) | `200` | `409 CHALLENGE_ALREADY_ACTIVE`, `403` |
+| `POST /challenges/{id}/cancel` ✅ **[added]** | Required, creator/group-admin | — | `200`, DRAFT → CANCELLED. The only route to CANCELLED, and the only way the mandated `DRAFT → CANCELLED` edge is reachable. An ACTIVE challenge is never cancellable — participants already hold real daily progress | `409 INVALID_STATE_TRANSITION`, `403` |
+| `POST /challenges/{id}/join` ✅ | Required, group member | — | `201` full challenge detail | `403 NOT_A_MEMBER`, `409 ALREADY_JOINED`, `409 PARTICIPANT_LIMIT_REACHED`, `409 CANNOT_REJOIN`, `409 CHALLENGE_ALREADY_ENDED` |
+| `POST /challenges/{id}/leave` ✅ | Required, participant | — | `204`, sets `outcome = left` | `409 CHALLENGE_ALREADY_ENDED`, `403 NOT_A_PARTICIPANT` |
+| `GET /challenges/{id}/participants` ✅ | Required, participant-or-group-member | — | `{ user_id, display_name, status, outcome, current_score, current_streak, rank, joined_at }[]`. `rank` is assigned at read time from score ordering and never persisted (Architecture §3.2) | `403` |
+
+**Challenge status is never client-supplied.** `DRAFT → ACTIVE` and `ACTIVE → COMPLETED`
+are applied server-side on every read/write path by comparing the clock to the
+challenge's own frozen timezone — no background scheduler is needed at V1 scale, and no
+request can name a target status. Every transition is checked against the domain state
+machine, so an illegal one is a `409 INVALID_STATE_TRANSITION`, never a silent write.
+
+**Rejoin policy** (not specified in Phase 0, decided here): participant statuses are
+terminal (Architecture §3.3), so `left`, `completed`, and `eliminated` participants cannot
+re-enter the same challenge — reviving one would make elimination meaningless in
+SURVIVAL. Joining a *different* challenge is always available.
 
 **Resolved:** design spec §18 unknown #1 is decided — no public/discoverable challenges in V1 (ADR 0001). The Challenges screen's DISCOVER tab is dropped from the delivered app (ACTIVE/COMPLETED tabs only); `Group.privacy` stays in the schema, dormant, so a future `GET /groups?visibility=public` + join flow can add discovery without a migration.
 
@@ -78,8 +114,8 @@ Design note: onboarding's "I already have an account" now routes to the real Log
 
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /challenges/{id}/progress/today` | Required, participant | — | `{ challenge_day, status, current_value, target, remaining, deadline_at, last_synced_at }` (backs Verify screen) | — |
-| `GET /challenges/{id}/progress/{date}` | Required, participant | — | historical single-day record | `404` |
+| `GET /challenges/{id}/progress/today` ✅ | Required, participant | — | `{ challenge_day, day_index, status, target, unit, deadline_at, completed_at }`. `challenge_day` is resolved server-side from the challenge's frozen timezone, never from the client. Creates the row PENDING on first look — idempotent via `UNIQUE(participant, challenge_day)`. **No `current_value`/`remaining`/`last_synced_at`**: verification is Phase 4, and a `0` would render as "you've done nothing today", which is not what PENDING means | `403 NOT_A_PARTICIPANT`, `409 CHALLENGE_NOT_ACTIVE` |
+| `GET /challenges/{id}/progress/{date}` ✅ | Required, participant | — | historical single-day record, read-only — unlike `/today` this never creates a row, since back-filling a day nobody looked at would invent history | `404 DAY_OUT_OF_RANGE`, `403` |
 | `POST /challenges/{id}/verify` | Required, participant | `{ provider, evidence: {...} }` — shape depends on provider (health-query result vs. media reference) | `200 { status: completed\|pending_review\|rejected, xp_awarded?, new_streak?, new_rank? }` (backs Mission Complete) | `409 ALREADY_VERIFIED_TODAY` (idempotent — returns existing result, not an error, on exact retry), `409 CHALLENGE_NOT_ACTIVE` |
 | `GET /challenges/{id}/warnings` | Required, self or admin | — | `{ reason, challenge_day, created_at }[]` | — |
 
@@ -133,6 +169,14 @@ Design note: onboarding's "I already have an account" now routes to the real Log
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
 | `POST /reports` | Required | `{ target_type, target_id, reason }` | `201` | `422` |
+
+## Operations
+
+Not under `/api/v1` — an infrastructure probe, not part of the product contract, so it is unversioned and consumed by Docker/deployment health checks rather than the app.
+
+| Method & Path | Auth | Request | Response | Errors |
+|---|---|---|---|---|
+| `GET /health` ✅ | Public | — | `200 { status, database, redis }`, or the same body with `503` when either dependency is down. Deliberately coarse: it reports up/down per dependency and never leaks hostnames, versions, or connection detail | — |
 
 ---
 
