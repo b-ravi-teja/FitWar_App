@@ -1,0 +1,2 @@
+// TODO: point at the deployed production API once one exists.
+API_BASE_URL = https:/$()/api.fitwar.app.example

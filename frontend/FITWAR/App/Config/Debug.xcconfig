@@ -1,0 +1,13 @@
+// Local FastAPI backend. The iOS SIMULATOR shares the Mac's network stack, so
+// `localhost` reaches a server running on this machine directly — no extra setup.
+//
+// A PHYSICAL DEVICE cannot resolve the Mac's `localhost`; it needs the Mac's LAN IP
+// on the same Wi-Fi network instead. Find it with:
+//   ipconfig getifaddr en0
+// Then create an untracked `Debug.local.xcconfig` next to this file containing:
+//   API_BASE_URL = http:/$()/YOUR_MAC_LAN_IP:8000
+// It's auto-included below and overrides the simulator default — no need to edit
+// this tracked file, and nothing device-specific gets committed.
+API_BASE_URL = http:/$()/localhost:8000
+
+#include? "Debug.local.xcconfig"
