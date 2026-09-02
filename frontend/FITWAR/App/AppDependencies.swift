@@ -10,6 +10,7 @@ final class AppDependencies {
     let groupsService: GroupsServiceProtocol
     let challengesService: ChallengesServiceProtocol
     let verificationService: VerificationServiceProtocol
+    let gameService: GameServiceProtocol
     let keychain: KeychainStoring
     let sessionManager: SessionManager
     let themeManager: ThemeManager
@@ -24,6 +25,7 @@ final class AppDependencies {
         groupsService = GroupsService(client: client)
         challengesService = ChallengesService(client: client)
         verificationService = VerificationService(client: client)
+        gameService = GameService(client: client)
         keychain = KeychainStore()
         sessionManager = SessionManager(authService: authService, keychain: keychain, apiClient: client)
         themeManager = ThemeManager()

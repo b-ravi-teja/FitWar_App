@@ -18,6 +18,7 @@ from app.models.verification import (
     HealthProvider,
     VerificationStatus,
 )
+from app.schemas.game import DayResolutionResponse
 
 
 class HealthConnectionResponse(BaseModel):
@@ -92,3 +93,6 @@ class SubmitVerificationResponse(BaseModel):
     # True when this repeated an already-completed day: the same result is returned
     # rather than a second one being recorded.
     idempotent_replay: bool
+    # Present only when this submission actually completed the day. Absent on a replay
+    # or a short-of-target attempt — nothing was awarded, so there is nothing to report.
+    resolution: DayResolutionResponse | None = None

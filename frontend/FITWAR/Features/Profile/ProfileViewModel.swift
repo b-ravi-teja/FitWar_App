@@ -13,11 +13,21 @@ enum ProfileLoadState: Equatable {
 final class ProfileViewModel {
     private(set) var loadState: ProfileLoadState = .loading
 
+    /// Server-computed XP, level and streak. Nil until loaded, and never derived
+    /// locally — Phase 5 moved leveling to the server so there is one authority.
+    private(set) var xpSummary: XPSummary?
+
     private let userService: UserServiceProtocol
+    private let gameService: GameServiceProtocol
     private let sessionManager: SessionManager
 
-    init(userService: UserServiceProtocol, sessionManager: SessionManager) {
+    init(
+        userService: UserServiceProtocol,
+        gameService: GameServiceProtocol,
+        sessionManager: SessionManager
+    ) {
         self.userService = userService
+        self.gameService = gameService
         self.sessionManager = sessionManager
     }
 
@@ -28,6 +38,11 @@ final class ProfileViewModel {
                 try await self.userService.fetchCurrentUser()
             }
             loadState = .loaded(user)
+            // Secondary: the profile still renders without it, so a failure here
+            // degrades the level badge rather than the whole screen.
+            xpSummary = try? await sessionManager.authorizedRequest {
+                try await self.gameService.fetchXPSummary()
+            }
         } catch let error as APIError {
             loadState = classify(error)
         } catch {
@@ -47,11 +62,4 @@ final class ProfileViewModel {
         await sessionManager.logout()
     }
 
-    /// `xp_total` is real, persisted data (Phase 1's `UserProfile.xp_total`, always 0
-    /// today since nothing awards XP yet). `level` is a small, clearly-provisional
-    /// formula on top of it — NOT the real leveling system (that belongs to the XP
-    /// domain, a later phase) — documented here rather than left unexplained.
-    static func provisionalLevel(forXP xp: Int) -> Int {
-        1 + xp / 1000
-    }
 }

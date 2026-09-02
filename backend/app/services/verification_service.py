@@ -50,6 +50,7 @@ from app.repositories.verification import (
     HealthConnectionRepository,
     VerificationRecordRepository,
 )
+from app.services.game_service import DayResolution, GameService
 
 
 class VerificationOutcome:
@@ -63,12 +64,15 @@ class VerificationOutcome:
         challenge_day: date,
         deadline_at: datetime,
         idempotent_replay: bool,
+        resolution: "DayResolution | None" = None,
     ) -> None:
         self.record = record
         self.progress = progress
         self.challenge_day = challenge_day
         self.deadline_at = deadline_at
         self.idempotent_replay = idempotent_replay
+        # What the competitive pipeline did, when this submission completed a day.
+        self.resolution = resolution
 
 
 class VerificationService:
@@ -77,6 +81,7 @@ class VerificationService:
         self._progress = DailyProgressRepository(session)
         self._records = VerificationRecordRepository(session)
         self._connections = HealthConnectionRepository(session)
+        self._game = GameService(session)
 
     async def submit(
         self,
@@ -118,6 +123,15 @@ class VerificationService:
 
         # The day, and its exact UTC bounds, come from the challenge's frozen timezone
         # — never from the client, and never from server-local time (§11).
+        # Resolve anything already past its deadline first (§20.5). This is what stops
+        # a participant who should already be eliminated from verifying their way out.
+        await self._game.resolve_overdue_days(challenge, now=now)
+        await self._session.refresh(participant)
+        if participant.status != ParticipantStatus.ACTIVE:
+            raise ChallengeNotActiveError(
+                f"You are '{participant.status.value}' in this challenge."
+            )
+
         challenge_day = resolve_challenge_day(now, challenge.timezone)
         day_start = day_start_utc(challenge_day, challenge.timezone)
         deadline = day_deadline_utc(challenge_day, challenge.timezone)
@@ -165,10 +179,19 @@ class VerificationService:
             raw_payload=raw_payload,
         )
 
+        resolution: DayResolution | None = None
         if result.verified:
             progress.status = DailyProgressStatus.COMPLETED
             progress.completed_at = now
             progress.verification_record_id = record.id
+            # Score, XP and streak, in this same transaction (Architecture §3.4).
+            resolution = await self._game.apply_completion(
+                challenge=challenge,
+                participant=participant,
+                progress=progress,
+                value=result.value,
+                now=now,
+            )
         # A short-of-target or inconclusive attempt leaves the day PENDING on purpose.
         # The day is only MISSED once its deadline passes with no verified record — a
         # deadline sweep the failure-rule phase owns (§20.5), not something a partial
@@ -186,6 +209,7 @@ class VerificationService:
             challenge_day=challenge_day,
             deadline_at=deadline,
             idempotent_replay=False,
+            resolution=resolution,
         )
 
     async def _existing_record(

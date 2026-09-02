@@ -4,14 +4,20 @@ import Testing
 
 @MainActor
 struct ProfileViewModelTests {
-    private func makeSUT(fetchResult: Result<User, Error>) -> ProfileViewModel {
+    private func makeSUT(
+        fetchResult: Result<User, Error>, games: MockGameService = MockGameService()
+    ) -> ProfileViewModel {
         let userService = MockUserService()
         userService.fetchResult = fetchResult
         let authService = MockAuthService()
         let keychain = MockKeychainStore()
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let sessionManager = SessionManager(authService: authService, keychain: keychain, apiClient: apiClient)
-        return ProfileViewModel(userService: userService, sessionManager: sessionManager)
+        return ProfileViewModel(
+            userService: userService,
+            gameService: games,
+            sessionManager: sessionManager
+        )
     }
 
     @Test func loadSuccessPopulatesUser() async {
@@ -35,9 +41,30 @@ struct ProfileViewModelTests {
         #expect(sut.loadState == .serverError)
     }
 
-    @Test func provisionalLevelFormulaIsDeterministic() {
-        #expect(ProfileViewModel.provisionalLevel(forXP: 0) == 1)
-        #expect(ProfileViewModel.provisionalLevel(forXP: 1000) == 2)
-        #expect(ProfileViewModel.provisionalLevel(forXP: 2500) == 3)
+    @Test func levelComesFromTheServerNotAClientFormula() async {
+        /// Phase 5 moved leveling to the server. The provisional client-side formula
+        /// this test used to assert is gone on purpose — two authorities disagreeing
+        /// about a user's level is exactly the bug the change prevents.
+        let games = MockGameService()
+        games.xpResult = .success(GameFixtures.xp(total: 2500, level: 6))
+        let sut = makeSUT(fetchResult: .success(User(id: UUID(), email: "ravi@example.com", displayName: "Ravi", avatarMediaId: nil, xpTotal: 2500, notificationPreferences: nil)), games: games)
+
+        await sut.load()
+
+        #expect(sut.xpSummary?.level == 6)
+    }
+
+    @Test func aFailedXPLoadDoesNotBreakTheProfile() async {
+        /// The badge degrades; the screen still renders.
+        let games = MockGameService()
+        games.xpResult = .failure(APIError.noConnection)
+        let sut = makeSUT(fetchResult: .success(User(id: UUID(), email: "ravi@example.com", displayName: "Ravi", avatarMediaId: nil, xpTotal: 2500, notificationPreferences: nil)), games: games)
+
+        await sut.load()
+
+        #expect(sut.xpSummary == nil)
+        if case .loaded = sut.loadState {} else {
+            Issue.record("profile should still load, got \(sut.loadState)")
+        }
     }
 }

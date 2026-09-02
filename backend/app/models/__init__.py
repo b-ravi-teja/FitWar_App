@@ -7,6 +7,7 @@ from app.models.challenge import (
     ChallengeRule,
     DailyChallengeProgress,
 )
+from app.models.game import Elimination, Warning, XPReason, XPTransaction
 from app.models.group import Group, GroupMember
 from app.models.user import User, UserProfile
 from app.models.verification import (
@@ -22,6 +23,7 @@ __all__ = [
     "ChallengeParticipant",
     "ChallengeRule",
     "DailyChallengeProgress",
+    "Elimination",
     "Group",
     "GroupMember",
     "HealthConnection",
@@ -32,4 +34,7 @@ __all__ = [
     "UserProfile",
     "VerificationRecord",
     "VerificationStatus",
+    "Warning",
+    "XPReason",
+    "XPTransaction",
 ]

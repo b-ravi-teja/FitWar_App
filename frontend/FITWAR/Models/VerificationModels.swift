@@ -59,6 +59,10 @@ struct SubmitVerificationResponse: Decodable, Sendable, Equatable {
     /// True when this repeated an already-completed day; the same result comes back
     /// rather than a second one being recorded.
     let idempotentReplay: Bool
+    /// What the day earned, when this submission actually completed it. Absent on a
+    /// replay or a short attempt — nothing was awarded, and a zeroed struct would
+    /// render as a real award of 0 XP.
+    let resolution: DayResolution?
 }
 
 // MARK: - Health connections

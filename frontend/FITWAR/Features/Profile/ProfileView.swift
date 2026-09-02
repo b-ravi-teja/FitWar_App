@@ -9,6 +9,7 @@ import SwiftUI
 struct ProfileView: View {
     @Environment(SessionManager.self) private var sessionManager
     @Environment(\.userService) private var userService
+    @Environment(\.gameService) private var gameService
     @State private var viewModel: ProfileViewModel?
 
     var body: some View {
@@ -19,7 +20,11 @@ struct ProfileView: View {
         }
         .task {
             if viewModel == nil {
-                viewModel = ProfileViewModel(userService: userService, sessionManager: sessionManager)
+                viewModel = ProfileViewModel(
+                    userService: userService,
+                    gameService: gameService,
+                    sessionManager: sessionManager
+                )
             }
             await viewModel?.load()
         }
@@ -51,7 +56,7 @@ struct ProfileView: View {
                             .font(FWTypography.displayLarge)
                             .foregroundStyle(FWColor.textPrimary)
                         HStack(spacing: FWSpacing.xs + 1) {
-                            StatusBadge(text: "LEVEL \(ProfileViewModel.provisionalLevel(forXP: user.xpTotal))", tone: .accent)
+                            StatusBadge(text: "LEVEL \(viewModel?.xpSummary?.level ?? 1)", tone: .accent)
                         }
                     }
                 }

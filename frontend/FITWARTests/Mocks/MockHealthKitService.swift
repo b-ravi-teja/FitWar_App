@@ -120,14 +120,18 @@ enum VerificationFixtures {
         status: VerificationStatus = .verified,
         reasonCode: String? = nil,
         value: Decimal = 12_000,
-        idempotentReplay: Bool = false
+        idempotentReplay: Bool = false,
+        resolution: DayResolution? = nil
     ) -> SubmitVerificationResponse {
         SubmitVerificationResponse(
             verification: record(status: status, value: value, reasonCode: reasonCode),
             challengeDay: Date(timeIntervalSince1970: 1_760_000_000),
             dayStatus: dayStatus,
             deadlineAt: Date(timeIntervalSince1970: 1_760_086_400),
-            idempotentReplay: idempotentReplay
+            idempotentReplay: idempotentReplay,
+            // Only a completed day carries an award; the server omits it otherwise.
+            resolution: resolution
+                ?? (dayStatus == .completed ? GameFixtures.resolution() : nil)
         )
     }
 }

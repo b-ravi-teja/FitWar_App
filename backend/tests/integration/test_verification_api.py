@@ -333,6 +333,15 @@ class TestContract:
             "day_status",
             "deadline_at",
             "idempotent_replay",
+            "resolution",
+        }
+        # Phase 5: a completed day reports what it earned, all server-computed.
+        assert set(body["resolution"]) == {
+            "xp_awarded",
+            "completion_xp",
+            "streak_bonus_xp",
+            "score_delta",
+            "current_streak",
         }
         assert set(body["verification"]) == {
             "id",

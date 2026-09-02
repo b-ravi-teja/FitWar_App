@@ -49,6 +49,7 @@ _TARGET_PRECISION = Decimal("0.01")
 
 class ChallengeService:
     def __init__(self, session: AsyncSession) -> None:
+        self._session = session
         self._challenges = ChallengeRepository(session)
         self._participants = ChallengeParticipantRepository(session)
         self._members = GroupMemberRepository(session)
@@ -209,6 +210,15 @@ class ChallengeService:
             challenge.status = ChallengeStatus.COMPLETED
 
         await self._challenges.flush()
+
+        # Closing the challenge is only half of it — outcomes have to be written before
+        # anyone reads final standings. Done here so every path that syncs status
+        # (detail read, list, leaderboard) finalizes exactly once; `finalize_if_ended`
+        # no-ops when outcomes already exist.
+        if challenge.status is ChallengeStatus.COMPLETED:
+            from app.services.game_service import GameService
+
+            await GameService(self._session).finalize_if_ended(challenge, now=current)
 
     def current_day_index(self, challenge: Challenge, *, now: datetime | None = None) -> int:
         """1-based day number for the UI's "DAY 6 / 30", clamped to the challenge's range."""

@@ -94,6 +94,9 @@ struct VerifyView: View {
                     detail: "\(FWNumber.compact(response.verification.value)) recorded against a "
                         + "target of \(FWNumber.compact(response.verification.target))."
                 )
+                if let resolution = response.resolution {
+                    xpBreakdown(resolution)
+                }
                 FITWARPrimaryButton(title: "DONE", action: onCompleted)
             }
 
@@ -129,6 +132,45 @@ struct VerifyView: View {
                 FITWARSecondaryButton(title: "RETRY") { Task { await viewModel.load() } }
             }
         }
+    }
+
+    /// The design's "XP awarded, broken into components" — every number server-computed.
+    private func xpBreakdown(_ resolution: DayResolution) -> some View {
+        VStack(alignment: .leading, spacing: FWSpacing.xs) {
+            HStack {
+                Text("XP EARNED")
+                    .font(FWTypography.eyebrowLabel)
+                    .foregroundStyle(FWColor.textDim2)
+                Spacer()
+                Text("+\(resolution.xpAwarded)")
+                    .font(FWTypography.numericLarge)
+                    .foregroundStyle(FWColor.accent)
+            }
+            componentRow("Mission complete", resolution.completionXP)
+            if resolution.streakBonusXP > 0 {
+                componentRow("Streak bonus", resolution.streakBonusXP)
+            }
+            componentRow("Day streak", resolution.currentStreak, isXP: false)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(FWSpacing.lg)
+        .background(FWColor.surface)
+        .overlay(
+            RoundedRectangle(cornerRadius: FWRadius.large - 2, style: .continuous)
+                .strokeBorder(FWColor.line)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: FWRadius.large - 2, style: .continuous))
+    }
+
+    private func componentRow(_ label: String, _ value: Int, isXP: Bool = true) -> some View {
+        HStack {
+            Text(label).font(FWTypography.bodySmall).foregroundStyle(FWColor.textDim)
+            Spacer()
+            Text(isXP ? "+\(value)" : "\(value)")
+                .font(FWTypography.numericSmall)
+                .foregroundStyle(FWColor.textPrimary)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func targetBlock(_ day: DailyProgress) -> some View {

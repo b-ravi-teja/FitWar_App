@@ -13,6 +13,7 @@ from app.core.deps import (
     ChallengeViewer,
     CurrentUser,
     DbSession,
+    GameServiceDep,
     GroupMemberContext,
     ParticipationServiceDep,
     VerificationServiceDep,
@@ -22,6 +23,7 @@ from app.domain.challenges.failure_rule import Mode, describe
 from app.domain.verification.evidence import HealthEvidence
 from app.models.challenge import Challenge, ChallengeParticipant, ChallengeStatus
 from app.repositories.challenges import ChallengeParticipantRepository
+from app.repositories.game import GameRepository
 from app.repositories.groups import GroupRepository
 from app.schemas.challenge import (
     ChallengeDetailResponse,
@@ -30,6 +32,13 @@ from app.schemas.challenge import (
     CreateChallengeRequest,
     DailyProgressResponse,
     UpdateChallengeRequest,
+)
+from app.schemas.game import (
+    DayResolutionResponse,
+    LeaderboardEntryResponse,
+    LeaderboardResponse,
+    MyChallengeGameStateResponse,
+    WarningResponse,
 )
 from app.schemas.verification import (
     SubmitVerificationRequest,
@@ -403,4 +412,87 @@ async def submit_verification(
         day_status=outcome.progress.status,
         deadline_at=outcome.deadline_at,
         idempotent_replay=outcome.idempotent_replay,
+        resolution=(
+            DayResolutionResponse(
+                xp_awarded=outcome.resolution.xp_awarded,
+                completion_xp=outcome.resolution.completion_xp,
+                streak_bonus_xp=outcome.resolution.streak_bonus_xp,
+                score_delta=outcome.resolution.score_delta,
+                current_streak=outcome.resolution.current_streak,
+            )
+            if outcome.resolution is not None
+            else None
+        ),
+    )
+
+
+@challenges_router.get(
+    "/{challenge_id}/leaderboard", response_model=LeaderboardResponse
+)
+async def get_leaderboard(
+    context: ChallengeViewer, game: GameServiceDep
+) -> LeaderboardResponse:
+    """Ranked standings. Readable by any participant or member of the challenge's group.
+
+    Rank is computed here from the frozen tie-break, never persisted, and the read
+    sweeps overdue days first so standings can't show someone as still in it after
+    their deadline passed.
+    """
+    ranked = await game.leaderboard(context.challenge)
+    return LeaderboardResponse(
+        challenge_id=context.challenge.id,
+        game_mode=context.challenge.game_mode.value,
+        is_final=context.challenge.status == ChallengeStatus.COMPLETED,
+        entries=[
+            LeaderboardEntryResponse(
+                rank=position,
+                user_id=participant.user_id,
+                display_name=display_name,
+                score=participant.current_score,
+                current_streak=participant.current_streak,
+                status=participant.status,
+                outcome=participant.outcome,
+                is_me=participant.user_id == context.user.id,
+            )
+            for position, participant, display_name in ranked
+        ],
+    )
+
+
+@challenges_router.get(
+    "/{challenge_id}/me", response_model=MyChallengeGameStateResponse
+)
+async def get_my_game_state(
+    context: ChallengeParticipantContext, game: GameServiceDep, session: DbSession
+) -> MyChallengeGameStateResponse:
+    """The caller's own competitive state — score, streak, warnings, elimination.
+
+    Scoped to the caller: warnings and miss counts are that participant's own record and
+    are not exposed for anyone else through this route.
+    """
+    assert context.participant is not None
+    ranked = await game.leaderboard(context.challenge)
+    my_rank = next(
+        (position for position, p, _ in ranked if p.user_id == context.user.id), None
+    )
+    participant = next(
+        (p for _, p, _ in ranked if p.user_id == context.user.id), context.participant
+    )
+    warnings = await GameRepository(session).warnings_for(participant.id)
+    return MyChallengeGameStateResponse(
+        challenge_id=context.challenge.id,
+        rank=my_rank,
+        score=participant.current_score,
+        current_streak=participant.current_streak,
+        longest_streak=participant.longest_streak,
+        consecutive_misses=participant.consecutive_misses,
+        status=participant.status,
+        outcome=participant.outcome,
+        warnings=[
+            WarningResponse(
+                challenge_day=w.challenge_day, reason=w.reason, created_at=w.created_at
+            )
+            for w in warnings
+        ],
+        eliminated_at=participant.eliminated_at,
     )

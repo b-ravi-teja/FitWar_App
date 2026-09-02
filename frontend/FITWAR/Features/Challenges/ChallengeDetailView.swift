@@ -13,12 +13,15 @@ struct ChallengeDetailView: View {
     @Environment(\.challengesService) private var challengesService
     @Environment(\.verificationService) private var verificationService
     @Environment(\.healthKitService) private var healthKitService
+    @Environment(\.gameService) private var gameService
     @Environment(\.dismiss) private var dismiss
 
     @State private var viewModel: ChallengeDetailViewModel?
     /// Non-nil while Today's Mission is presented. Sheet rather than a push: the
     /// prototype treats verification as a focused drill-in, not a nav-stack level.
     @State private var verifyingChallenge: ChallengeDetail?
+    /// Non-nil while the standings sheet is up.
+    @State private var showingLeaderboard = false
 
     var body: some View {
         content
@@ -33,6 +36,13 @@ struct ChallengeDetailView: View {
                     )
                 }
                 await viewModel?.load()
+            }
+            .sheet(isPresented: $showingLeaderboard) {
+                LeaderboardView(
+                    viewModel: LeaderboardViewModel(
+                        challengeId: challengeId, games: gameService
+                    )
+                )
             }
             .sheet(item: $verifyingChallenge) { challenge in
                 VerifyView(
@@ -237,6 +247,10 @@ struct ChallengeDetailView: View {
                         )
                 }
             }
+
+            // Standings are available to any participant or group member, running or
+            // finished — the server decides who may read them.
+            FITWARSecondaryButton(title: "VIEW STANDINGS") { showingLeaderboard = true }
 
             if challenge.isLeavable {
                 FITWARSecondaryButton(

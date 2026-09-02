@@ -4,14 +4,17 @@ import uuid
 
 from fastapi import APIRouter, status
 
-from app.core.deps import CurrentUser, HealthConnectionServiceDep, UserServiceDep
+from app.core.deps import CurrentUser, DbSession, HealthConnectionServiceDep, UserServiceDep
 from app.models.user import User
 from app.models.verification import HealthConnection
+from app.repositories.game import GameRepository
+from app.schemas.game import XPSummaryResponse, XPTransactionResponse
 from app.schemas.user import UpdateProfileRequest, UserResponse
 from app.schemas.verification import (
     CreateHealthConnectionRequest,
     HealthConnectionResponse,
 )
+from app.services.game_service import xp_summary
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -87,3 +90,26 @@ async def delete_health_connection(
     connections: HealthConnectionServiceDep,
 ) -> None:
     await connections.revoke(user_id=current_user.id, connection_id=connection_id)
+
+
+@router.get("/xp", response_model=XPSummaryResponse)
+async def get_my_xp(current_user: CurrentUser, session: DbSession) -> XPSummaryResponse:
+    """XP total, server-computed level, and the recent ledger.
+
+    The ledger is the source of truth and `xp_total` its cached projection
+    (Architecture §3.2); both come from the server so the client never derives a level.
+    """
+    total, level, into_level, to_next = await xp_summary(session, current_user.id)
+    transactions = await GameRepository(session).xp_history(current_user.id, limit=50)
+    return XPSummaryResponse(
+        xp_total=total,
+        level=level,
+        xp_into_level=into_level,
+        xp_to_next_level=to_next,
+        transactions=[
+            XPTransactionResponse(
+                id=t.id, amount=t.amount, reason=t.reason, created_at=t.created_at
+            )
+            for t in transactions
+        ],
+    )

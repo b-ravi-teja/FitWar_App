@@ -9,12 +9,14 @@
 /* Begin PBXBuildFile section */
 		00A3DB9DD83F4F9867AC74CF /* Archivo-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4138FAC72DB6B096D589FB84 /* Archivo-Medium.ttf */; };
 		0292CDE5C4FAC29266C76699 /* StatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E19384B29FD650ED73F7BC9 /* StatCard.swift */; };
+		05C64DE41E0A05BE922FE5A3 /* GameModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B101AED7D9857FF559614741 /* GameModelsTests.swift */; };
 		07442E2230D51017F37CFA44 /* APIDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30890678266367278D7732C7 /* APIDecodingTests.swift */; };
 		09364116CCE4F1BEC6071503 /* EnvironmentValues+Dependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB648D5B26FD3F40BE70CF7 /* EnvironmentValues+Dependencies.swift */; };
 		096A4C4073944F9188D9F3BE /* ForgotPasswordViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62C9368F800FE568103C6C2 /* ForgotPasswordViewModel.swift */; };
 		0A05C1499EBC3BF85134DF87 /* UserService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85671F81EDD7ACBFE1A52A1F /* UserService.swift */; };
 		0B853724113723F97516AD9F /* AuthViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA790CB130BFF7058A5D6430 /* AuthViewModelTests.swift */; };
 		0CBEC8187CF11B659CD45C61 /* Archivo-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DE4A14E53F337233CF89561D /* Archivo-Bold.ttf */; };
+		0E5718A1806EA1BE0089C264 /* GameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632F059A9FB9C9BCB892EE22 /* GameService.swift */; };
 		0FC43CFAC6F25B48AC6E805E /* LeaderboardRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D92C16307B23A9504A7E2D /* LeaderboardRow.swift */; };
 		1019C0FB934D261ECABF2CDB /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8214B7BE42879C990B684280 /* Spacing.swift */; };
 		112DD657C3FDE56EBCF037EC /* BattlesPlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9057E66E79F99DC50DD15158 /* BattlesPlaceholderView.swift */; };
@@ -53,10 +55,13 @@
 		512014B51B1330A307603814 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1863908100F1950DF39A46A3 /* User.swift */; };
 		5735D38312DED2479A1F8616 /* ChallengesViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CCAC918D075C2F64417F48 /* ChallengesViewModelTests.swift */; };
 		5B523CEADCEE8E34FCF69934 /* ChallengeDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7D0E3D6AB8CC3C50C88328 /* ChallengeDetailViewModel.swift */; };
+		5C48576A9E10DB74DF2F7A45 /* LeaderboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E3B9215513682C1570BE675 /* LeaderboardView.swift */; };
 		5CBC189C22FE925EDD085384 /* RegisterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3FDAB608B143382F86574B4 /* RegisterView.swift */; };
 		5FFE5C80F07730EE40CAB94A /* Radius.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2445C3E0C525D46047320B /* Radius.swift */; };
 		63C1C8B7C3D93CFEA8C2AD82 /* MockGroupsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E6386C74F77F0154371F8FF /* MockGroupsService.swift */; };
 		645DDF82C5E2AE4BB18F9B07 /* ChallengesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F711FC1093C9595BA0299FC9 /* ChallengesListView.swift */; };
+		686821B1261BEF400B8F40EF /* GameModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 895BE3E2692DCBA02893E3DF /* GameModels.swift */; };
+		6ABEAFCDC243DC24561FB792 /* MockGameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51073AE54DE7A83B3C11D1CB /* MockGameService.swift */; };
 		6BC5A32868E1C5B3DEC0BDFC /* FWTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A5F20C0185606426F6797F /* FWTextField.swift */; };
 		76B7B3DF0F7B6D7CEB11F4B0 /* GroupsViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 822F65C99B1622EF4D7DFABC /* GroupsViewModelTests.swift */; };
 		789137C0907D74F4E6985600 /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03313262DFBE9B8F97679CA1 /* ForgotPasswordView.swift */; };
@@ -66,6 +71,7 @@
 		85570A7CDDEC1C4FD1C4630F /* Badges.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D95517C52E3556B821011A2 /* Badges.swift */; };
 		8ABCE34BFFE6753E4FCAE5DB /* ChallengeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5BF0869800CF40D9BD9265 /* ChallengeModels.swift */; };
 		92ACC9954553B6B20015D961 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97891C8A0C06B8043D4DF2CC /* Theme.swift */; };
+		973B6B94EAC0FDCB376F65B9 /* LeaderboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCD60644573229DD07BC7D23 /* LeaderboardViewModel.swift */; };
 		97800792AA29E35CBA88BA33 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F8BA58C2258097F10D4C712 /* LoginView.swift */; };
 		992E65545223A7D863EFC66D /* HealthConnector.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE2CD40DE025EFE05E665EF /* HealthConnector.swift */; };
 		A1527D8D982A78EF958E5FE9 /* Shadows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD258E12DAF6CCF60617389 /* Shadows.swift */; };
@@ -103,6 +109,7 @@
 		EA2A0200254ACD0F7C165961 /* Archivo-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 64D9D81A339CA1902B636389 /* Archivo-Regular.ttf */; };
 		EB3F9CC2CFFDFDA21456BA63 /* RegisterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8672BB1CEFE17F843D93EB3E /* RegisterViewModel.swift */; };
 		EB70BA1D8DD83D7ECC8AC8C6 /* MockKeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9EF2F0DC58C849F2096DD28 /* MockKeychainStore.swift */; };
+		ED31D3432B30CB537CD41E1C /* LeaderboardViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B638BB7257F06A30B57158 /* LeaderboardViewModelTests.swift */; };
 		EE09E5AE0BD30B45011C0096 /* AuthFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8EDC66E6F7ED8AEDE4C0D8 /* AuthFlowView.swift */; };
 		F0BC9E4C14DD3C98D3246758 /* JetBrainsMono-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FD1EE10C4FF029EE1E9AB604 /* JetBrainsMono-Bold.ttf */; };
 		F3214A1D1A2B6ABC36E3E7D8 /* FITWARButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1AE9B7C8F62BE6C575D2427 /* FITWARButtons.swift */; };
@@ -166,13 +173,16 @@
 		44B3503667FF72BB396BE7EE /* OnboardingDisciplineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDisciplineView.swift; sourceTree = "<group>"; };
 		459894C1D69E752ADCC1B099 /* ChallengeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeCard.swift; sourceTree = "<group>"; };
 		4D57E4C7FCA12BA53055EA80 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		50B638BB7257F06A30B57158 /* LeaderboardViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeaderboardViewModelTests.swift; sourceTree = "<group>"; };
 		50D0DBCADF3D427ED82EF494 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		51073AE54DE7A83B3C11D1CB /* MockGameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGameService.swift; sourceTree = "<group>"; };
 		54277F5111B23307F7E1BA23 /* Archivo-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-SemiBold.ttf"; sourceTree = "<group>"; };
 		5AB0E13DC5B1787DAAD11187 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		5D173EE65F1D9868456979A9 /* ActivityRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRow.swift; sourceTree = "<group>"; };
 		5F0F15B9ADBA0B8F9EA25598 /* FITWAR.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FITWAR.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5F12AA870764F7DDFE6E8DFE /* Staging.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Staging.xcconfig; sourceTree = "<group>"; };
 		627A31A4A4B04EF8CF403F88 /* FITWARTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FITWARTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		632F059A9FB9C9BCB892EE22 /* GameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameService.swift; sourceTree = "<group>"; };
 		642993102FA3E7D0CE9D8FE7 /* StateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateViews.swift; sourceTree = "<group>"; };
 		64D9D81A339CA1902B636389 /* Archivo-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Regular.ttf"; sourceTree = "<group>"; };
 		65D5F29D9D0C0EC664ED0BBA /* GroupsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsService.swift; sourceTree = "<group>"; };
@@ -193,6 +203,7 @@
 		85671F81EDD7ACBFE1A52A1F /* UserService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserService.swift; sourceTree = "<group>"; };
 		85F4105E354B66D14E88AFA8 /* ProfileViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileViewModelTests.swift; sourceTree = "<group>"; };
 		8672BB1CEFE17F843D93EB3E /* RegisterViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegisterViewModel.swift; sourceTree = "<group>"; };
+		895BE3E2692DCBA02893E3DF /* GameModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameModels.swift; sourceTree = "<group>"; };
 		8F68ACB7E1D1FFB94482C7E4 /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
 		8FAE2CBD4196CCB27B00C767 /* LaunchFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchFlowUITests.swift; sourceTree = "<group>"; };
 		8FD258E12DAF6CCF60617389 /* Shadows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shadows.swift; sourceTree = "<group>"; };
@@ -201,6 +212,7 @@
 		96A0E8B61F5917C64A8E07E6 /* VerifyViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifyViewModelTests.swift; sourceTree = "<group>"; };
 		97891C8A0C06B8043D4DF2CC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		9C2F9398C5A041FA568EDD22 /* GroupComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupComponents.swift; sourceTree = "<group>"; };
+		9E3B9215513682C1570BE675 /* LeaderboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeaderboardView.swift; sourceTree = "<group>"; };
 		A26CA6EC3FDABC680722D253 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A62C9368F800FE568103C6C2 /* ForgotPasswordViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordViewModel.swift; sourceTree = "<group>"; };
 		A631660D3FB6103DE1B4706A /* MockAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockAuthService.swift; sourceTree = "<group>"; };
@@ -209,6 +221,7 @@
 		AC5EBED959E61BBF6378C535 /* CreateFlowComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateFlowComponents.swift; sourceTree = "<group>"; };
 		ADE2CD40DE025EFE05E665EF /* HealthConnector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthConnector.swift; sourceTree = "<group>"; };
 		ADFF2E79A1087ED36B9D0518 /* OnboardingProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingProfileView.swift; sourceTree = "<group>"; };
+		B101AED7D9857FF559614741 /* GameModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameModelsTests.swift; sourceTree = "<group>"; };
 		B3FDAB608B143382F86574B4 /* RegisterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegisterView.swift; sourceTree = "<group>"; };
 		B8BBC620EED3339B858373D0 /* SectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionHeader.swift; sourceTree = "<group>"; };
 		B9507368432092601FAE4885 /* TestJWT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestJWT.swift; sourceTree = "<group>"; };
@@ -240,6 +253,7 @@
 		F711FC1093C9595BA0299FC9 /* ChallengesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengesListView.swift; sourceTree = "<group>"; };
 		F8517F6C2C455B1282057B67 /* FITWARUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FITWARUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FA790CB130BFF7058A5D6430 /* AuthViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModelTests.swift; sourceTree = "<group>"; };
+		FCD60644573229DD07BC7D23 /* LeaderboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeaderboardViewModel.swift; sourceTree = "<group>"; };
 		FCF60A8578708811243AD95E /* ProgressComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressComponents.swift; sourceTree = "<group>"; };
 		FD1EE10C4FF029EE1E9AB604 /* JetBrainsMono-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Bold.ttf"; sourceTree = "<group>"; };
 		FE0E6994F249033BD954D4A8 /* ChallengeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeDetailView.swift; sourceTree = "<group>"; };
@@ -318,9 +332,11 @@
 				FA790CB130BFF7058A5D6430 /* AuthViewModelTests.swift */,
 				C8CCAC918D075C2F64417F48 /* ChallengesViewModelTests.swift */,
 				3F3594736AD3B5AB47F3D2A9 /* EvidenceEncodingTests.swift */,
+				B101AED7D9857FF559614741 /* GameModelsTests.swift */,
 				822F65C99B1622EF4D7DFABC /* GroupsViewModelTests.swift */,
 				2EB82B26B1C9E4A7AD0AC2C1 /* HealthKitServiceTests.swift */,
 				77FDBA61EC6931F384302013 /* KeychainStoreTests.swift */,
+				50B638BB7257F06A30B57158 /* LeaderboardViewModelTests.swift */,
 				85F4105E354B66D14E88AFA8 /* ProfileViewModelTests.swift */,
 				ED59CC0CD9CC3ADBE00243BF /* SessionManagerTests.swift */,
 				96A0E8B61F5917C64A8E07E6 /* VerifyViewModelTests.swift */,
@@ -409,6 +425,7 @@
 				5AB0E13DC5B1787DAAD11187 /* AuthService.swift */,
 				D771A961565DF8E05F5D1EC2 /* ChallengesService.swift */,
 				2EE588BA1C9C105F5F947BA3 /* Endpoint.swift */,
+				632F059A9FB9C9BCB892EE22 /* GameService.swift */,
 				65D5F29D9D0C0EC664ED0BBA /* GroupsService.swift */,
 				BD7F558477197A15C90B7407 /* JSONDecoding.swift */,
 				BCEF09CB98A53DF5D0067BAE /* LoadState.swift */,
@@ -443,11 +460,21 @@
 			children = (
 				F1A671918F62881C40380C7B /* AuthModels.swift */,
 				1A5BF0869800CF40D9BD9265 /* ChallengeModels.swift */,
+				895BE3E2692DCBA02893E3DF /* GameModels.swift */,
 				43D4C67B23D5044918260581 /* GroupModels.swift */,
 				1863908100F1950DF39A46A3 /* User.swift */,
 				108290D5B91EB55E89CC910C /* VerificationModels.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		B2E1359D2FE879AEB5EEA296 /* Leaderboard */ = {
+			isa = PBXGroup;
+			children = (
+				9E3B9215513682C1570BE675 /* LeaderboardView.swift */,
+				FCD60644573229DD07BC7D23 /* LeaderboardViewModel.swift */,
+			);
+			path = Leaderboard;
 			sourceTree = "<group>";
 		};
 		B6A4E7FCF1115E9E69C4E218 /* Resources */ = {
@@ -526,6 +553,7 @@
 			isa = PBXGroup;
 			children = (
 				A631660D3FB6103DE1B4706A /* MockAuthService.swift */,
+				51073AE54DE7A83B3C11D1CB /* MockGameService.swift */,
 				3E6386C74F77F0154371F8FF /* MockGroupsService.swift */,
 				AC2B806DE07561C59DCF87F0 /* MockHealthKitService.swift */,
 				B9EF2F0DC58C849F2096DD28 /* MockKeychainStore.swift */,
@@ -542,6 +570,7 @@
 				848B1CC8760810174DD3C0A7 /* Challenges */,
 				3B817C7BCA92F6440D720FC2 /* Groups */,
 				E96601E96B865631F3D8F482 /* Home */,
+				B2E1359D2FE879AEB5EEA296 /* Leaderboard */,
 				C148ABDDEAC5CD34F2325955 /* Main */,
 				231F760576857A062A56B07D /* Onboarding */,
 				3F02120187196B3A6163A317 /* Profile */,
@@ -735,6 +764,8 @@
 				6BC5A32868E1C5B3DEC0BDFC /* FWTextField.swift in Sources */,
 				789137C0907D74F4E6985600 /* ForgotPasswordView.swift in Sources */,
 				096A4C4073944F9188D9F3BE /* ForgotPasswordViewModel.swift in Sources */,
+				686821B1261BEF400B8F40EF /* GameModels.swift in Sources */,
+				0E5718A1806EA1BE0089C264 /* GameService.swift in Sources */,
 				DE0E25000DD98C6EE885C062 /* GroupComponents.swift in Sources */,
 				FADD79BAAC6C86037A879079 /* GroupDetailView.swift in Sources */,
 				4D887E082123656A5D9E4F7E /* GroupDetailViewModel.swift in Sources */,
@@ -748,6 +779,8 @@
 				211272FE4485B4EFBFB4DA80 /* JSONDecoding.swift in Sources */,
 				3C2D5F22B40771E3986A8C03 /* KeychainStore.swift in Sources */,
 				0FC43CFAC6F25B48AC6E805E /* LeaderboardRow.swift in Sources */,
+				5C48576A9E10DB74DF2F7A45 /* LeaderboardView.swift in Sources */,
+				973B6B94EAC0FDCB376F65B9 /* LeaderboardViewModel.swift in Sources */,
 				29C9AD3B6867F0F4FCFA8561 /* LoadState.swift in Sources */,
 				97800792AA29E35CBA88BA33 /* LoginView.swift in Sources */,
 				E9230C563F17B7018F779695 /* LoginViewModel.swift in Sources */,
@@ -802,10 +835,13 @@
 				0B853724113723F97516AD9F /* AuthViewModelTests.swift in Sources */,
 				5735D38312DED2479A1F8616 /* ChallengesViewModelTests.swift in Sources */,
 				B0BC22865E8DD1E8611A3ECA /* EvidenceEncodingTests.swift in Sources */,
+				05C64DE41E0A05BE922FE5A3 /* GameModelsTests.swift in Sources */,
 				76B7B3DF0F7B6D7CEB11F4B0 /* GroupsViewModelTests.swift in Sources */,
 				368D2DD99819B9116D57E0CA /* HealthKitServiceTests.swift in Sources */,
 				DE12FBC654050C6263C84D08 /* KeychainStoreTests.swift in Sources */,
+				ED31D3432B30CB537CD41E1C /* LeaderboardViewModelTests.swift in Sources */,
 				B3CD249A6F92DE17467A68B8 /* MockAuthService.swift in Sources */,
+				6ABEAFCDC243DC24561FB792 /* MockGameService.swift in Sources */,
 				63C1C8B7C3D93CFEA8C2AD82 /* MockGroupsService.swift in Sources */,
 				1C5F68DC783FB6890B9341F9 /* MockHealthKitService.swift in Sources */,
 				EB70BA1D8DD83D7ECC8AC8C6 /* MockKeychainStore.swift in Sources */,

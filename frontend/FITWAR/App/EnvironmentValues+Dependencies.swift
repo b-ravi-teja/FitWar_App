@@ -34,6 +34,12 @@ private struct VerificationServiceKey: EnvironmentKey {
     )
 }
 
+private struct GameServiceKey: EnvironmentKey {
+    static let defaultValue: GameServiceProtocol = GameService(
+        client: APIClient(baseURL: AppConfig.apiBaseURL)
+    )
+}
+
 private struct HealthKitServiceKey: EnvironmentKey {
     static let defaultValue: HealthKitServicing = HealthKitService()
 }
@@ -42,6 +48,11 @@ extension EnvironmentValues {
     var verificationService: VerificationServiceProtocol {
         get { self[VerificationServiceKey.self] }
         set { self[VerificationServiceKey.self] = newValue }
+    }
+
+    var gameService: GameServiceProtocol {
+        get { self[GameServiceKey.self] }
+        set { self[GameServiceKey.self] = newValue }
     }
 
     var healthKitService: HealthKitServicing {

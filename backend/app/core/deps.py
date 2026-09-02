@@ -24,6 +24,7 @@ from app.repositories.groups import GroupMemberRepository, GroupRepository
 from app.repositories.users import UserRepository
 from app.services.auth_service import AuthService
 from app.services.challenge_service import ChallengeService
+from app.services.game_service import GameService
 from app.services.group_service import GroupService
 from app.services.health_connection_service import HealthConnectionService
 from app.services.participation_service import ParticipationService
@@ -103,6 +104,13 @@ def get_verification_service(session: DbSession) -> VerificationService:
 
 
 VerificationServiceDep = Annotated[VerificationService, Depends(get_verification_service)]
+
+
+def get_game_service(session: DbSession) -> GameService:
+    return GameService(session)
+
+
+GameServiceDep = Annotated[GameService, Depends(get_game_service)]
 
 
 def get_health_connection_service(session: DbSession) -> HealthConnectionService:

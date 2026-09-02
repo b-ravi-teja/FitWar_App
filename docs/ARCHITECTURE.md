@@ -952,3 +952,100 @@ Recorded rather than glossed over:
 - Health-app entries are flagged `HKMetadataKeyWasUserEntered`, so the simulator can exercise the *hand-entered* path with real HealthKit data but **cannot** produce device-recorded samples. The `VERIFIED` → `completed` path was therefore proven at the API contract level (real server, real database) and through unit tests, **not** with device-recorded HealthKit samples.
 - Reinstalling the app can reset Health authorization while leaving the "already asked" state, which is what surfaced the `authorizationStatus` bug in §21.5.
 
+---
+
+## 22. Game System (Phase 5)
+
+Turns a verified day into competitive state. Everything below is server-computed; the
+client renders results and derives none of them (§1 tenet 1).
+
+### 22.1 The pipeline
+
+`POST /challenges/{id}/verify` → provider → `VerificationResult` → **resolve overdue days**
+→ resolve today's progress → score → XP ledger + cached total → streak → warning/elimination
+→ participant state → commit → domain events.
+
+All of it runs in **one transaction**. There is no state where a day reads `completed`
+without the XP that completing it earned, and a failure rolls the whole thing back (§12,
+"no silent catch-and-continue").
+
+The sweep runs *first*, deliberately: a participant who should already be eliminated
+cannot verify their way out of it.
+
+### 22.2 Scoring
+
+`current_score` is the sum of the verified canonical value of each completed day —
+derived by the server from the evidence, never submitted by the client. It is a cached
+projection of `DailyChallengeProgress` (§3.2) and drives POINTS mode's "highest total
+wins".
+
+### 22.3 XP and levels
+
+Ledger-first: every award writes an immutable `XPTransaction`, and `UserProfile.xp_total`
+is updated in the same transaction as a projection of it (§3.2). Awards are
+`DAILY_COMPLETION` + `STREAK_BONUS`; **no miss ever debits XP** (ADR 0002). Amounts and
+the linear level threshold were not frozen by Phase 0 — see **ADR 0008** for the values
+and reasoning. The server computes the level; the client's old provisional formula is gone.
+
+### 22.4 Streaks
+
+`current_streak` increments on each completed day and resets to 0 on a missed one;
+`longest_streak` is the high-water mark. A completed day also clears `consecutive_misses`
+("complete today's mission to reset" — ADR 0004); warnings already recorded remain as
+history rather than being retracted.
+
+### 22.5 Warnings and elimination (SURVIVAL only)
+
+The frozen rule: miss 1 day → `Warning`, miss 2 **consecutive** days → `Elimination`
+(ADR 0004). Both are persisted state transitions, not UI messages. Elimination records
+its day, reason, timestamp and triggering warning, sets `status = ELIMINATED` and
+`outcome = OUT`. `POINTS` never eliminates.
+
+**No resurrection**: the participant state machine has no `ELIMINATED → ACTIVE` edge, and
+an eliminated participant's verification attempt is refused with `CHALLENGE_NOT_ACTIVE`.
+
+### 22.6 Deadline resolution
+
+§20.5 requires resolution to be deadline-driven so failure-rule timing never waits on a
+human or a client. The repository has no scheduler and Phase 5 does not invent one;
+instead the sweep runs **lazily** — every read or write that touches a challenge resolves
+its overdue days first. A day therefore cannot be *observed* unresolved after its
+deadline. The operation is idempotent, so adding a cron later changes nothing.
+
+### 22.7 Leaderboard and outcomes
+
+Rank is computed at read time from the frozen §20.3 tie-break and never persisted (§3.2).
+The same `rank_key` orders the live leaderboard and assigns POINTS outcomes at close, so
+rank and outcome cannot disagree about who is ahead. Eliminated and departed participants
+still appear, with their status — hiding them would silently renumber everyone above.
+
+At close: SURVIVAL → every non-eliminated finisher `WON`, eliminated `OUT`, departed
+`LEFT`. POINTS → single top scorer `WON`, other finishers `LOST`, departed `LEFT`.
+`outcome` is written once and never rewritten, which is what makes closed standings
+immutable and late evidence non-retroactive.
+
+### 22.8 Idempotency and concurrency
+
+Guaranteed structurally, not by convention:
+
+| Risk | Guard |
+|---|---|
+| Double XP | `UNIQUE(user_id, reason, reference_type, reference_id)` on the ledger — a replay physically cannot insert a second row |
+| Double score / streak | The award check runs under `SELECT … FOR UPDATE` on the participant row; a replay is a read, not a write |
+| Duplicate warning | `UNIQUE(participant, challenge_day)` + `ON CONFLICT DO NOTHING` |
+| Double elimination | `UNIQUE(challenge_participant_id)` on `elimination` |
+| Lost XP update | The profile row is locked before its read-modify-write |
+| Mutation after close | `outcome` is only written when null; closed challenges reject verification |
+
+Verified with five independent Postgres connections racing to credit the same day:
+exactly one succeeds.
+
+### 22.9 Domain events
+
+`verification_completed`, `score_changed`, `xp_awarded`, `warning_issued`,
+`participant_eliminated`, `challenge_completed` are published on an in-process bus
+(`core/events.py`) **after commit**, so a subscriber never sees a change a rollback
+erases. Nothing subscribes yet — Phase 6's realtime fanout, push and cache invalidation
+are the intended consumers, and building WebSocket infrastructure now to justify the
+publish would be premature.
+
