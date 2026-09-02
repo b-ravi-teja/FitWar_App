@@ -542,7 +542,31 @@ Standard envelope conventions: cursor-based pagination (`?cursor=&limit=`) on al
 
 **Role model kept intentionally flat for V1:** group-level `owner / admin / member`. No per-challenge roles beyond "creator can edit pre-start, admin can moderate, participant can act on their own participation." Over-modeling permissions before the product needs them is exactly the kind of premature abstraction to avoid.
 
-**Rate limiting:** Redis-backed sliding window, applied at the `core/deps.py` layer — tighter limits on `/auth/*` and `/challenges/{id}/verify` (abuse-prone) than on read endpoints.
+**Rate limiting:** ✅ **implemented** (`app/core/rate_limit.py`). Redis-backed sliding window, opted into per route via a `RateLimitGuard` dependency, so no handler contains rate-limit code and no service is coupled to Redis. It is generic infrastructure — the same guard will cover `/challenges/{id}/verify` and any other abuse-prone endpoint when those phases land.
+
+*Algorithm — sliding window log.* Each accepted request is one member of a Redis sorted set scored by its millisecond timestamp; entries older than `now - window` are dropped before counting. A fixed-window counter was rejected: it lets a caller spend a full quota at the end of one window and another at the start of the next, permitting double the intended rate across the boundary. The evict-count-insert sequence runs as a **single Lua script**, so it is atomic — concurrent requests cannot interleave between the count and the insert and slip past the limit together. Rejected requests are deliberately *not* recorded, so a blocked caller who keeps hammering does not keep pushing their own window forward and lock themselves out permanently.
+
+*Key strategy.* `rl:v1:{rule}:{identity_source}:{keyed_digest}`. The identity is never stored in plaintext — it is an HMAC-SHA256 digest keyed with the app's JWT secret and truncated to 128 bits, so anyone with read access to Redis cannot recover the email addresses being counted, and bucket keys cannot be guessed or enumerated. Two identity sources exist today:
+
+- **IP** — taken from the socket peer. `X-Forwarded-For` is ignored entirely unless `RATE_LIMIT_TRUSTED_PROXY_COUNT` is set above 0, because the header is attacker-controlled and honouring it blindly would make every per-IP bucket bypassable by rotating a header value. With N trusted proxies the client is the Nth entry from the right — the last N were appended by infrastructure we control.
+- **Account email** — the submitted address, normalized (trimmed, lowercased) so casing variants share one bucket.
+
+*Why two buckets on login.* A per-IP limit alone cannot see many sources converging on one account; a per-account limit alone cannot see one source spraying many accounts. Login and password-reset carry both. **This introduces no account-enumeration vector:** the account bucket counts whatever address was submitted, whether or not it resolves to a real user, and both buckets produce a byte-identical 429 body — so the response cannot distinguish a registered address from an unknown one. The accepted trade-off is that a determined attacker can consume a specific account's login bucket; the limit is set high enough (10 per 15 min) that this is a nuisance rather than a lockout, and the per-account window is deliberately short.
+
+*Configured V1 limits* (all overridable via `RATE_LIMIT_*` env vars). Chosen to be invisible to a real person and useless to an attacker — 10 password guesses per 15 minutes against one account is not a viable brute force:
+
+| Endpoint | Per IP | Per account |
+|---|---|---|
+| `POST /auth/login` | 20 / 5 min | 10 / 15 min |
+| `POST /auth/register` | 10 / hour | — |
+| `POST /auth/refresh` | 120 / 5 min | — |
+| `POST /auth/password-reset/request` | 10 / hour | 5 / hour |
+
+Registration and password-reset get hourly budgets because they are rare actions. Refresh is frequent and automatic (roughly every 15 minutes per signed-in device), so its ceiling is high enough to absorb an office NAT sharing one egress IP.
+
+*Redis failure policy — fail closed.* If Redis is unreachable, throttled endpoints reject with 429 rather than run unprotected. The reasoning is that an attacker who can degrade Redis must not thereby switch off brute-force protection, and auth endpoints are exactly where that matters. The cost is explicit and accepted: a Redis outage blocks sign-in rather than merely un-throttling it. `RATE_LIMIT_FAIL_OPEN=true` inverts this per deployment for operators who would rather keep auth serving during a cache outage. The failure response carries no Redis detail; the cause is logged server-side only.
+
+*Response.* 429 in the standard Problem Details envelope with `code = RATE_LIMITED`, plus `retry_after_seconds` in the body and a matching standard `Retry-After` header, computed from when the oldest entry in the window ages out.
 
 **Upload validation:** enforced before a `MediaAsset` is marked `processed` — content-type allowlist (video/mp4, video/quicktime, image/jpeg, image/png), server-side size cap (e.g. 250MB for proof video, 10MB for images) checked against the actual uploaded object in storage (not just the client-declared `Content-Length`), and a background job that rejects files whose real content-type (via magic-byte sniffing) doesn't match what was declared.
 

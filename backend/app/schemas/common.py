@@ -13,3 +13,6 @@ class ProblemDetail(BaseModel):
     status: int
     detail: str
     code: str
+    # Only present on 429s. Serialized with exclude_none, so every other error keeps
+    # exactly the shape it had before this field existed.
+    retry_after_seconds: int | None = None

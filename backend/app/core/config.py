@@ -44,6 +44,10 @@ class AuthSettings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
 
+    @property
+    def jwt_secret_value(self) -> str:
+        return self.jwt_secret.get_secret_value()
+
 
 class StorageSettings(BaseSettings):
     """S3-compatible object storage config. Not wired to any endpoint until the Media phase."""
@@ -66,6 +70,48 @@ class ApplicationSettings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=list)
 
 
+class RateLimitSettings(BaseSettings):
+    """Sliding-window rate limits (Architecture §7).
+
+    Defaults are deliberately generous enough to be invisible to a real person and
+    still useless to an attacker: 10 password guesses per 15 minutes against one
+    account is not a viable brute force, but no honest user hits it. Registration and
+    password-reset are rare actions, so they get hourly budgets; refresh is frequent
+    and automatic (every ~15 minutes per signed-in device), so its ceiling is high
+    enough to absorb a shared office NAT.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="RATE_LIMIT_", env_file=".env.local", extra="ignore"
+    )
+
+    enabled: bool = True
+
+    # 0 = never trust X-Forwarded-For. Raise it to the number of proxies actually in
+    # front of the app once one is deployed; see `client_ip()` for why this matters.
+    trusted_proxy_count: int = 0
+
+    # False = fail closed: if Redis is down, throttled endpoints reject rather than
+    # run unprotected. See docs/ARCHITECTURE.md §7 for the trade-off.
+    fail_open: bool = False
+
+    login_ip_limit: int = 20
+    login_ip_window_seconds: int = 300
+    login_account_limit: int = 10
+    login_account_window_seconds: int = 900
+
+    register_ip_limit: int = 10
+    register_ip_window_seconds: int = 3600
+
+    refresh_ip_limit: int = 120
+    refresh_ip_window_seconds: int = 300
+
+    password_reset_ip_limit: int = 10
+    password_reset_ip_window_seconds: int = 3600
+    password_reset_account_limit: int = 5
+    password_reset_account_window_seconds: int = 3600
+
+
 class Settings:
     """Single composition root. Construct once via `get_settings()`."""
 
@@ -75,6 +121,7 @@ class Settings:
         self.auth = AuthSettings()
         self.storage = StorageSettings()
         self.app = ApplicationSettings()
+        self.rate_limit = RateLimitSettings()
 
 
 @lru_cache

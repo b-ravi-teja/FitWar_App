@@ -30,3 +30,11 @@ class ForbiddenError(DomainError):
 
 class RateLimitedError(DomainError):
     code = "RATE_LIMITED"
+
+    def __init__(
+        self, detail: str | None = None, *, retry_after_seconds: int | None = None
+    ) -> None:
+        # Seconds until the caller may retry. A plain duration, not an HTTP concept —
+        # `core/errors.py` is what turns it into a Retry-After header.
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(detail)

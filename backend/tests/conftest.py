@@ -14,7 +14,24 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import _engine, get_db
+from app.core.rate_limit import KEY_PREFIX
+from app.core.redis import get_redis
 from app.main import create_app
+
+
+@pytest.fixture(autouse=True)
+async def _isolate_rate_limit_buckets() -> AsyncIterator[None]:
+    """Give every test a clean set of rate-limit buckets.
+
+    Rate limiting is left enabled during the suite so tests exercise the real request
+    path, but the buckets are process-wide state in Redis keyed by client IP — and
+    every test shares one IP under ASGITransport. Without this, tests would leak
+    quota into each other and fail in an order-dependent way.
+    """
+    redis = get_redis()
+    async for key in redis.scan_iter(match=f"{KEY_PREFIX}:*"):
+        await redis.delete(key)
+    yield
 
 
 @pytest.fixture

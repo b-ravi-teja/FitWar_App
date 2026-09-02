@@ -61,21 +61,38 @@ def _title_from_code(code: str) -> str:
     return code.replace("_", " ").title()
 
 
-def _problem_response(*, status_code: int, code: str, detail: str) -> JSONResponse:
+def _problem_response(
+    *,
+    status_code: int,
+    code: str,
+    detail: str,
+    retry_after_seconds: int | None = None,
+) -> JSONResponse:
     body = ProblemDetail(
         type=code.lower(),
         title=_title_from_code(code),
         status=status_code,
         detail=detail,
         code=code,
+        retry_after_seconds=retry_after_seconds,
     )
-    return JSONResponse(status_code=status_code, content=body.model_dump())
+    headers = {"Retry-After": str(retry_after_seconds)} if retry_after_seconds else None
+    return JSONResponse(
+        status_code=status_code,
+        content=body.model_dump(exclude_none=True),
+        headers=headers,
+    )
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def handle_domain_error(_: Request, exc: DomainError) -> JSONResponse:
-        return _problem_response(status_code=_resolve_status(exc), code=exc.code, detail=exc.detail)
+        return _problem_response(
+            status_code=_resolve_status(exc),
+            code=exc.code,
+            detail=exc.detail,
+            retry_after_seconds=getattr(exc, "retry_after_seconds", None),
+        )
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:

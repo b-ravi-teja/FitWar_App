@@ -5,6 +5,7 @@ Validated against `docs/FITWAR_DESIGN_SPEC.md`. Builds on the Phase 0 architectu
 **Conventions**
 - Auth: `Bearer <access_jwt>` unless marked `Public`.
 - Errors: Problem-Details envelope — `{ "type", "title", "status", "detail", "code" }` (Phase 0 §12). Only endpoint-specific error `code`s are listed per route; `VALIDATION_ERROR` (422) and `UNAUTHENTICATED` (401) apply universally and aren't repeated per row.
+- Rate limiting: throttled endpoints (marked 🔒 below) return `429 RATE_LIMITED` in the same envelope with one extra field, `retry_after_seconds`, and a matching standard `Retry-After` header. It is the only response that carries that field. Clients should honour it rather than retrying immediately; the iOS client surfaces it as "try again in N seconds". Limits, key strategy, and the Redis-failure policy are in Architecture §7.
 - Pagination: cursor-based, `?cursor=&limit=` on all list endpoints, response wraps `{ "items": [...], "next_cursor": "..." }`.
 - IDs: UUIDs everywhere.
 
@@ -16,12 +17,14 @@ Validated against `docs/FITWAR_DESIGN_SPEC.md`. Builds on the Phase 0 architectu
 
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
-| `POST /auth/register` | Public | `{ email, password, display_name }` | `201 { user_id, access_token, refresh_token, expires_in }` | `409 EMAIL_TAKEN` |
-| `POST /auth/login` | Public | `{ email, password }` | `200 { access_token, refresh_token, expires_in }` | `401 INVALID_CREDENTIALS`, `403 ACCOUNT_DELETED` |
-| `POST /auth/refresh` | Public (refresh token in body) | `{ refresh_token }` | `200 { access_token, refresh_token, expires_in }` (rotated) | `401 REFRESH_INVALID`, `401 REFRESH_REUSE_DETECTED` (revokes token family) |
+| `POST /auth/register` 🔒 | Public | `{ email, password, display_name }` | `201 { user_id, access_token, refresh_token, expires_in }` | `409 EMAIL_TAKEN` |
+| `POST /auth/login` 🔒 | Public | `{ email, password }` | `200 { access_token, refresh_token, expires_in }` | `401 INVALID_CREDENTIALS`, `403 ACCOUNT_DELETED` |
+| `POST /auth/refresh` 🔒 | Public (refresh token in body) | `{ refresh_token }` | `200 { access_token, refresh_token, expires_in }` (rotated) | `401 REFRESH_INVALID`, `401 REFRESH_REUSE_DETECTED` (revokes token family) |
 | `POST /auth/logout` | Public (refresh token in body) | `{ refresh_token }` | `204`, revokes just the presented token (not its family — family revocation is reserved for reuse detection). Idempotent: an unknown or already-revoked token still returns `204`, so it never signals whether a token was valid | — |
-| `POST /auth/password-reset/request` | Public | `{ email }` | `202` always (never reveals whether the email exists) — issues a single-use opaque token, hashed and stored in Redis with TTL, delivered via `EmailSender` abstraction (`LoggingEmailSender` in dev — no real provider configured yet) | — |
+| `POST /auth/password-reset/request` 🔒 | Public | `{ email }` | `202` always (never reveals whether the email exists) — issues a single-use opaque token, hashed and stored in Redis with TTL, delivered via `EmailSender` abstraction (`LoggingEmailSender` in dev — no real provider configured yet) | — |
 | `POST /auth/password-reset/confirm` | Public | `{ token, new_password }` | `200`, revokes all existing refresh tokens for the user | `400 RESET_TOKEN_INVALID_OR_EXPIRED` |
+
+🔒 = rate limited. Login: 20/5 min per IP **and** 10/15 min per submitted email. Register: 10/hour per IP. Refresh: 120/5 min per IP. Password-reset request: 10/hour per IP and 5/hour per submitted email. The per-email buckets count whatever address was submitted, real or not, and return an identical body either way — so a 429 never reveals whether an account exists (Architecture §7).
 
 Sign in with Apple: architecture-compatible (`auth_provider` column) but **not implemented in V1** — no `/auth/oauth/apple` endpoint yet. Design spec §20.8: the iOS Login screen ships without an Apple button until this exists.
 
