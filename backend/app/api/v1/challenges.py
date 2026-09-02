@@ -15,9 +15,11 @@ from app.core.deps import (
     DbSession,
     GroupMemberContext,
     ParticipationServiceDep,
+    VerificationServiceDep,
 )
-from app.domain.challenges.challenge_day import day_index, resolve_challenge_day
+from app.domain.challenges.challenge_day import day_index, day_start_utc, resolve_challenge_day
 from app.domain.challenges.failure_rule import Mode, describe
+from app.domain.verification.evidence import HealthEvidence
 from app.models.challenge import Challenge, ChallengeParticipant, ChallengeStatus
 from app.repositories.challenges import ChallengeParticipantRepository
 from app.repositories.groups import GroupRepository
@@ -28,6 +30,11 @@ from app.schemas.challenge import (
     CreateChallengeRequest,
     DailyProgressResponse,
     UpdateChallengeRequest,
+)
+from app.schemas.verification import (
+    SubmitVerificationRequest,
+    SubmitVerificationResponse,
+    VerificationRecordResponse,
 )
 
 challenges_router = APIRouter(prefix="/challenges", tags=["challenges"])
@@ -324,6 +331,7 @@ async def progress_today(
         status=progress.status,
         target=context.challenge.target_value,
         unit=context.challenge.unit,
+        window_start_at=day_start_utc(challenge_day, context.challenge.timezone),
         deadline_at=deadline,
         completed_at=progress.completed_at,
     )
@@ -348,6 +356,51 @@ async def progress_for_day(
         status=progress.status,
         target=context.challenge.target_value,
         unit=context.challenge.unit,
+        window_start_at=day_start_utc(progress.challenge_day, context.challenge.timezone),
         deadline_at=deadline,
         completed_at=progress.completed_at,
+    )
+
+
+@challenges_router.post(
+    "/{challenge_id}/verify",
+    response_model=SubmitVerificationResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def submit_verification(
+    body: SubmitVerificationRequest,
+    context: ChallengeParticipantContext,
+    verification: VerificationServiceDep,
+) -> SubmitVerificationResponse:
+    """Submit normalized evidence for today. The server decides the outcome.
+
+    Nothing here inspects the evidence: `VerificationService` picks the provider from
+    the challenge's declared method, and this layer only translates the result.
+    """
+    assert context.participant is not None
+    evidence = body.evidence
+    outcome = await verification.submit(
+        challenge=context.challenge,
+        participant=context.participant,
+        provider_name=body.provider.value,
+        evidence=HealthEvidence(
+            metric=evidence.metric,
+            value=evidence.value,
+            unit=evidence.unit,
+            period_start=evidence.period_start,
+            period_end=evidence.period_end,
+            source_name=evidence.source_name,
+            source_bundle_id=evidence.source_bundle_id,
+            was_user_entered=evidence.was_user_entered,
+        ),
+        raw_payload=body.model_dump(mode="json"),
+    )
+    return SubmitVerificationResponse(
+        verification=VerificationRecordResponse.model_validate(
+            outcome.record, from_attributes=True
+        ),
+        challenge_day=outcome.challenge_day,
+        day_status=outcome.progress.status,
+        deadline_at=outcome.deadline_at,
+        idempotent_replay=outcome.idempotent_replay,
     )

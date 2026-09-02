@@ -28,10 +28,21 @@ targets:
       Debug: FITWAR/App/Config/Debug.xcconfig
       Staging: FITWAR/App/Config/Staging.xcconfig
       Release: FITWAR/App/Config/Release.xcconfig
+    entitlements:
+      path: FITWAR/Resources/FITWAR.entitlements
+      properties:
+        com.apple.developer.healthkit: true
     info:
       path: FITWAR/Resources/Info.plist
       properties:
         CFBundleDisplayName: FITWAR
+        # Read-only HealthKit access. Only NSHealthShareUsageDescription is declared —
+        # FITWAR never writes to Health, so NSHealthUpdateUsageDescription would be
+        # requesting a capability the app doesn't use.
+        NSHealthShareUsageDescription: >-
+          FITWAR reads only the activity your current challenge measures — steps,
+          distance or active energy — to verify that you completed it. Nothing else
+          is read, and your health data is never shared with your group.
         UILaunchScreen: {}
         API_BASE_URL: $(API_BASE_URL)
         UIAppFonts:

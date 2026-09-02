@@ -188,6 +188,7 @@ enum Fixture {
         status: ChallengeStatus = .active,
         myStatus: ParticipantStatus? = .active,
         gameMode: GameMode = .survival,
+        verificationMethod: VerificationMethod = .appleHealth,
         participants: [ChallengeParticipantSummary] = []
     ) -> ChallengeDetail {
         ChallengeDetail(
@@ -198,7 +199,7 @@ enum Fixture {
             name: "30 DAY STEP WAR",
             activityType: .steps,
             gameMode: gameMode,
-            verificationMethod: .appleHealth,
+            verificationMethod: verificationMethod,
             status: status,
             targetValue: 10_000,
             unit: "steps",
@@ -242,6 +243,7 @@ enum Fixture {
             status: status,
             target: 10_000,
             unit: "steps",
+            windowStartAt: Date(timeIntervalSince1970: 1_760_000_000),
             deadlineAt: Date(timeIntervalSince1970: 1_760_086_400),
             completedAt: nil
         )

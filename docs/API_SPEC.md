@@ -42,8 +42,9 @@ Design note: onboarding's "I already have an account" now routes to the real Log
 | `GET /me/xp` | Required | `?cursor=` | paginated `XPTransaction` rows | — (not yet implemented — XP phase) |
 | `GET /me/achievements` | Required | — | list of unlocked achievements | — (not yet implemented — Achievements/XP phase) |
 | `GET /me/challenge-history` | Required | `?cursor=` | list of `{ challenge_id, name, ended_at, outcome }` | — (not yet implemented — Challenges phase) |
-| `POST /me/health-connections` | Required | `{ provider }` | `201 { connection_id, status }` | — (not yet implemented — Verification phase; Phase 2 only built the iOS permission-state UI, no backend call) |
-| `DELETE /me/health-connections/{id}` | Required, owner | — | `204` | — (not yet implemented — Verification phase) |
+| `GET /me/health-connections` ✅ **[added]** | Required | — | `{ id, provider, status, last_synced_at, connected_at }[]` — the caller's links only. `last_synced_at` is the server's own observation of evidence arriving, never a client claim about permissions | — |
+| `POST /me/health-connections` ✅ | Required | `{ provider }` (`apple_health` \| `health_connect`) | `201` connection. Idempotent — re-connecting an existing link revives it rather than failing, which is what the client needs when a user re-grants permission in iOS Settings | `422` |
+| `DELETE /me/health-connections/{id}` ✅ | Required, owner | — | `204`, marks the link revoked | `404 HEALTH_CONNECTION_NOT_FOUND` — the same 404 another account's id produces, so this can't probe for valid ids |
 
 ## Groups
 
@@ -117,9 +118,9 @@ SURVIVAL. Joining a *different* challenge is always available.
 
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /challenges/{id}/progress/today` ✅ | Required, participant | — | `{ challenge_day, day_index, status, target, unit, deadline_at, completed_at }`. `challenge_day` is resolved server-side from the challenge's frozen timezone, never from the client. Creates the row PENDING on first look — idempotent via `UNIQUE(participant, challenge_day)`. **No `current_value`/`remaining`/`last_synced_at`**: verification is Phase 4, and a `0` would render as "you've done nothing today", which is not what PENDING means | `403 NOT_A_PARTICIPANT`, `409 CHALLENGE_NOT_ACTIVE` |
+| `GET /challenges/{id}/progress/today` ✅ | Required, participant | — | `{ challenge_day, day_index, status, target, unit, window_start_at, deadline_at, completed_at }`. `challenge_day` is resolved server-side from the challenge's frozen timezone, never from the client. Creates the row PENDING on first look — idempotent via `UNIQUE(participant, challenge_day)`. **No `current_value`/`remaining`/`last_synced_at`**: verification is Phase 4, and a `0` would render as "you've done nothing today", which is not what PENDING means | `403 NOT_A_PARTICIPANT`, `409 CHALLENGE_NOT_ACTIVE` |
 | `GET /challenges/{id}/progress/{date}` ✅ | Required, participant | — | historical single-day record, read-only — unlike `/today` this never creates a row, since back-filling a day nobody looked at would invent history | `404 DAY_OUT_OF_RANGE`, `403` |
-| `POST /challenges/{id}/verify` | Required, participant | `{ provider, evidence: {...} }` — shape depends on provider (health-query result vs. media reference) | `200 { status: completed\|pending_review\|rejected, xp_awarded?, new_streak?, new_rank? }` (backs Mission Complete) | `409 ALREADY_VERIFIED_TODAY` (idempotent — returns existing result, not an error, on exact retry), `409 CHALLENGE_NOT_ACTIVE` |
+| `POST /challenges/{id}/verify` ✅ | Required, participant | `{ provider, evidence }` — normalized evidence, never raw HealthKit objects: `{ metric, value (decimal string), unit, period_start, period_end, source_name?, source_bundle_id?, was_user_entered }`. Instants must carry a UTC offset and fall inside the window the server published for today (Architecture §21.2) | `200 { verification, challenge_day, day_status, deadline_at, idempotent_replay }`. `day_status` is authoritative — the client never computes completion. **No `xp_awarded`/`new_streak`/`new_rank`**: XP, streaks and ranking are the next phase, and returning zeros would render as real standings | `400 INVALID_EVIDENCE` (wrong metric/unit/day), `409 VERIFICATION_METHOD_MISMATCH`, `409 CHALLENGE_NOT_ACTIVE`, `403 NOT_A_PARTICIPANT`. An exact retry after completion is **not** an error — it returns the original record with `idempotent_replay: true` |
 | `GET /challenges/{id}/warnings` | Required, self or admin | — | `{ reason, challenge_day, created_at }[]` | — |
 
 ## Verification Review (manual proof — Architecture §20.5)

@@ -1,10 +1,17 @@
-"""Current-user profile endpoints. Thin translation layer only."""
+"""Current-user profile and health-connection endpoints. Thin translation layer only."""
 
-from fastapi import APIRouter
+import uuid
 
-from app.core.deps import CurrentUser, UserServiceDep
+from fastapi import APIRouter, status
+
+from app.core.deps import CurrentUser, HealthConnectionServiceDep, UserServiceDep
 from app.models.user import User
+from app.models.verification import HealthConnection
 from app.schemas.user import UpdateProfileRequest, UserResponse
+from app.schemas.verification import (
+    CreateHealthConnectionRequest,
+    HealthConnectionResponse,
+)
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -17,6 +24,16 @@ def _to_response(user: User) -> UserResponse:
         avatar_media_id=user.profile.avatar_media_id,
         xp_total=user.profile.xp_total,
         notification_preferences=user.profile.notification_preferences,
+    )
+
+
+def _connection(connection: HealthConnection) -> HealthConnectionResponse:
+    return HealthConnectionResponse(
+        id=connection.id,
+        provider=connection.provider,
+        status=connection.status,
+        last_synced_at=connection.last_synced_at,
+        connected_at=connection.created_at,
     )
 
 
@@ -35,3 +52,38 @@ async def patch_me(
         notification_preferences=body.notification_preferences,
     )
     return _to_response(updated)
+
+
+@router.get("/health-connections", response_model=list[HealthConnectionResponse])
+async def list_health_connections(
+    current_user: CurrentUser, connections: HealthConnectionServiceDep
+) -> list[HealthConnectionResponse]:
+    return [_connection(c) for c in await connections.list_for_user(current_user.id)]
+
+
+@router.post(
+    "/health-connections",
+    response_model=HealthConnectionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_health_connection(
+    body: CreateHealthConnectionRequest,
+    current_user: CurrentUser,
+    connections: HealthConnectionServiceDep,
+) -> HealthConnectionResponse:
+    """Record that the user linked a health source.
+
+    Idempotent: connecting an already-linked provider revives it rather than failing,
+    which is what the client needs when a user re-grants permission in iOS Settings.
+    """
+    connection = await connections.connect(user_id=current_user.id, provider=body.provider)
+    return _connection(connection)
+
+
+@router.delete("/health-connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_health_connection(
+    connection_id: uuid.UUID,
+    current_user: CurrentUser,
+    connections: HealthConnectionServiceDep,
+) -> None:
+    await connections.revoke(user_id=current_user.id, connection_id=connection_id)

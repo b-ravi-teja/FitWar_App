@@ -9,6 +9,13 @@ from app.models.challenge import (
 )
 from app.models.group import Group, GroupMember
 from app.models.user import User, UserProfile
+from app.models.verification import (
+    HealthConnection,
+    HealthConnectionStatus,
+    HealthProvider,
+    VerificationRecord,
+    VerificationStatus,
+)
 
 __all__ = [
     "Challenge",
@@ -17,7 +24,12 @@ __all__ = [
     "DailyChallengeProgress",
     "Group",
     "GroupMember",
+    "HealthConnection",
+    "HealthConnectionStatus",
+    "HealthProvider",
     "RefreshToken",
     "User",
     "UserProfile",
+    "VerificationRecord",
+    "VerificationStatus",
 ]

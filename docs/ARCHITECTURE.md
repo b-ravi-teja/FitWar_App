@@ -597,7 +597,7 @@ class VerificationProvider(Protocol):
     def submit(self, participant: ChallengeParticipant, evidence: RawEvidence) -> VerificationResult: ...
 ```
 
-- `AppleHealthProvider` — receives HealthKit query results the iOS client already fetched and submitted (the *server* still decides pass/fail against the challenge target; the client is not trusted to self-report "I passed"). Confidence is `VERIFIED` if the sample's source/device is trusted and timestamp falls within the challenge day.
+- `AppleHealthProvider` — ✅ **implemented** (Phase 4). Receives HealthKit query results the iOS client already fetched and normalized (the *server* still decides pass/fail against the challenge target; the client is not trusted to self-report "I passed"). `VERIFIED` requires a trusted source *and* a timestamp inside the challenge day; see §21 for the full contract.
 - `ManualProofProvider` — video/photo upload, `status = PENDING_REVIEW` until the challenge's creator/admin explicitly approves or rejects it (§20.5 has the full workflow and the deadline-driven resolution rule that keeps failure-rule timing deterministic regardless of how long review takes).
 - `CameraAIProvider` (future, not built) — same interface, would just resolve `status` automatically instead of requiring human review. Not designed or scheduled for V1.
 
@@ -888,3 +888,67 @@ Both palettes remain exactly as specified in the design's `[data-fw]`/`[data-fw=
 ---
 
 **Stopping point.** This document is the frozen architectural shape for FITWAR V1. No application code has been written. The next step, once these decisions are confirmed, is Phase 1 of §17 — not a full build.
+
+---
+
+## 21. HealthKit Integration (Phase 4)
+
+### 21.1 The boundary
+
+`iOS HealthKit → normalized evidence DTO → API → VerificationService → VerificationProvider → VerificationResult → transactional day resolution.`
+
+HealthKit types stop inside `frontend/FITWAR/Core/Health/HealthKitService.swift`. Nothing above it — no SwiftUI view, no view model — imports HealthKit, and nothing on the server can: the backend receives plain numbers, units and UTC instants. Verified mechanically: an AST scan of `backend/app/domain/` finds zero executable references to HealthKit, and `challenge_service.py` / `participation_service.py` contain none either. `AppleHealthProvider` is the only file that names Apple Health, and it is reached through a registry keyed on `Challenge.verification_method`.
+
+### 21.2 Normalized evidence contract
+
+`POST /api/v1/challenges/{id}/verify` with `{ provider, evidence }`, where evidence is:
+
+| Field | Meaning |
+|---|---|
+| `metric` | `steps` \| `active_calories` \| `distance` — must match the challenge's activity |
+| `value` | decimal **string** (not a float — the column is `Numeric(12,2)`) |
+| `unit` | explicit; converted server-side (`m`→`km`, `kJ`→`kcal`, …). An unrecognised unit is rejected, never guessed |
+| `period_start` / `period_end` | UTC instants **with offset**; a naive timestamp is a 422 |
+| `source_name`, `source_bundle_id` | attribution, kept for audit — never proof on its own |
+| `was_user_entered` | whether the samples were typed in by hand |
+
+Supported metrics come from the existing `ActivityType` enum. `pushups` is deliberately absent from `HEALTH_READABLE`: HealthKit cannot count push-ups, so such a challenge is manual-proof only and a health submission against one is a configuration error, not a failed attempt.
+
+### 21.3 Server-authoritative verification
+
+The client submits facts; the server decides. Outcomes:
+
+- **VERIFIED** — trusted source, inside the day, value ≥ target → day `completed`.
+- **INCONCLUSIVE / `TARGET_NOT_MET`** — measurement trusted but short. The day stays `pending`, not `missed`: a later sync can still complete it, and only the deadline sweep (§20.5) decides a miss.
+- **INCONCLUSIVE / `USER_ENTERED_DATA`** — hand-entered HealthKit data is trivially forgeable (anyone can type 50,000 steps into the Health app), so it is recorded as evidence and never credited. §8 already made trusted source part of the verdict. **Verified end-to-end on a simulator**: 12,000 hand-entered steps against a 10,000 target left the day `pending`.
+- **REJECTED** — malformed or incompatible evidence (wrong metric, unknown unit, wrong day). Client-error rejections surface as `400 INVALID_EVIDENCE` and are *not* stored, so a client bug can't pollute a participant's evidence history.
+
+### 21.4 Timezone / day interpretation
+
+The challenge day is resolved server-side from the challenge's frozen IANA timezone (§11) — never from the device calendar, which is frequently in a different zone. `GET /challenges/{id}/progress/today` therefore publishes **both** bounds: `window_start_at` and `deadline_at`. `window_start_at` is published rather than derived because a DST day is 23 or 25 hours, so `deadline_at − 24h` is wrong twice a year. The client queries HealthKit over exactly that span with `.strictStartDate`/`.strictEndDate`, so a walk spanning midnight cannot be credited to both days, and the server re-checks containment (±5 min clock-skew tolerance) rather than trusting the client's window.
+
+### 21.5 Authorization model, and what iOS will not tell us
+
+FITWAR requests **read-only** access (`toShare: []`) to the single metric the active challenge measures — never a broad health read.
+
+The important limitation, stated plainly because pretending otherwise produces a lying UI: **iOS does not report read-permission outcomes.** `authorizationStatus(for:)` describes *share* access, and for a read-only request returns `.sharingDenied` whether or not reading was granted — branching on it told a user who had just tapped Allow that access was off (found and fixed during Phase 4 verification). The sound signal is `statusForAuthorizationRequest`, which says whether the system *would* prompt. Hence `HealthAuthorizationState` has `.unavailable`, `.notDetermined`, `.requested` — and deliberately no `.authorized` or `.denied`, since those would be claims the platform does not support.
+
+A zero reading is therefore ambiguous: no recorded activity, or access refused. The UI states both possibilities and offers the Settings path rather than asserting a denial. A HealthKit query that fails *on authorization* is the strongest denial signal available and routes to the same state.
+
+### 21.6 Idempotency
+
+Keyed on `UNIQUE(challenge_participant_id, challenge_day)`. Once a day is `completed`, a repeat submission returns the original record with `idempotent_replay: true` — no second record, no duplicate state transition, and no way for a later inflated value to overwrite a completed day. Verified: resubmitting 99,000 steps after a 12,000-step completion returns the original 12,000 record.
+
+### 21.7 Health connections
+
+`GET/POST/DELETE /api/v1/me/health-connections`. A connection records that the user linked a source; it stores no health data and no HealthKit objects. Because iOS won't report read permission, the only honest liveness signal is `last_synced_at`, which the **server** sets when evidence actually arrives — never a client claim. Connecting is idempotent (re-granting in iOS Settings revives the row); revocation is owner-scoped, so another account's connection id returns the same 404 a nonexistent one does.
+
+### 21.8 Simulator and device limitations
+
+Recorded rather than glossed over:
+
+- **No physical-device verification was performed.** Everything below was exercised on the iOS 26.5 simulator only.
+- Simulator HealthKit has no data by default and `simctl` offers no seeding API; samples must be added through the Health app by hand.
+- Health-app entries are flagged `HKMetadataKeyWasUserEntered`, so the simulator can exercise the *hand-entered* path with real HealthKit data but **cannot** produce device-recorded samples. The `VERIFIED` → `completed` path was therefore proven at the API contract level (real server, real database) and through unit tests, **not** with device-recorded HealthKit samples.
+- Reinstalling the app can reset Health authorization while leaving the "already asked" state, which is what surfaced the `authorizationStatus` bug in §21.5.
+

@@ -111,5 +111,10 @@ class DailyProgressResponse(BaseModel):
     status: DailyProgressStatus
     target: Decimal
     unit: str
+    # Both bounds of the challenge day in UTC, resolved from the challenge's frozen
+    # timezone. `window_start_at` is published rather than left for the client to
+    # compute: a DST day is 23 or 25 hours long, so `deadline_at - 24h` is wrong twice
+    # a year, and a client that guessed would query health data over the wrong span.
+    window_start_at: datetime
     deadline_at: datetime
     completed_at: datetime | None

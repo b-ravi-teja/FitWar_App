@@ -28,7 +28,27 @@ private struct ChallengesServiceKey: EnvironmentKey {
     )
 }
 
+private struct VerificationServiceKey: EnvironmentKey {
+    static let defaultValue: VerificationServiceProtocol = VerificationService(
+        client: APIClient(baseURL: AppConfig.apiBaseURL)
+    )
+}
+
+private struct HealthKitServiceKey: EnvironmentKey {
+    static let defaultValue: HealthKitServicing = HealthKitService()
+}
+
 extension EnvironmentValues {
+    var verificationService: VerificationServiceProtocol {
+        get { self[VerificationServiceKey.self] }
+        set { self[VerificationServiceKey.self] = newValue }
+    }
+
+    var healthKitService: HealthKitServicing {
+        get { self[HealthKitServiceKey.self] }
+        set { self[HealthKitServiceKey.self] = newValue }
+    }
+
     var authService: AuthServiceProtocol {
         get { self[AuthServiceKey.self] }
         set { self[AuthServiceKey.self] = newValue }

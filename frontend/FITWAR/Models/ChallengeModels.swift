@@ -221,6 +221,12 @@ struct DailyProgress: Decodable, Sendable, Equatable {
     let status: DailyProgressStatus
     @APIDecimal var target: Decimal
     let unit: String
+    /// Both bounds of the challenge day in UTC, published by the server from the
+    /// challenge's frozen timezone. The client must query health data over exactly this
+    /// span rather than its own calendar day — a DST day isn't 24h, so deriving the
+    /// start from `deadlineAt` would be wrong twice a year, and the challenge timezone
+    /// is frequently not the device's at all.
+    let windowStartAt: Date
     let deadlineAt: Date
     let completedAt: Date?
 }

@@ -9,10 +9,12 @@ final class AppDependencies {
     let userService: UserServiceProtocol
     let groupsService: GroupsServiceProtocol
     let challengesService: ChallengesServiceProtocol
+    let verificationService: VerificationServiceProtocol
     let keychain: KeychainStoring
     let sessionManager: SessionManager
     let themeManager: ThemeManager
     let healthConnector: HealthConnector
+    let healthKitService: HealthKitServicing
 
     init() {
         let client = APIClient(baseURL: AppConfig.apiBaseURL)
@@ -21,10 +23,12 @@ final class AppDependencies {
         userService = UserService(client: client)
         groupsService = GroupsService(client: client)
         challengesService = ChallengesService(client: client)
+        verificationService = VerificationService(client: client)
         keychain = KeychainStore()
         sessionManager = SessionManager(authService: authService, keychain: keychain, apiClient: client)
         themeManager = ThemeManager()
         healthConnector = UnimplementedHealthConnector()
+        healthKitService = HealthKitService()
 
         #if DEBUG
         Self.applyUITestHooks(keychain: keychain)

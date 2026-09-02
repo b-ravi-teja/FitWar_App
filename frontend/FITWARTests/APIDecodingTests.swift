@@ -151,7 +151,8 @@ struct APIDecodingTests {
 
     private static let dailyProgressJSON = """
     {"challenge_day":"2026-09-02","day_index":1,"status":"pending",
-     "target":"10000.00","unit":"steps","deadline_at":"2026-09-02T18:30:00Z",
+     "target":"10000.00","unit":"steps",
+     "window_start_at":"2026-09-01T18:30:00Z","deadline_at":"2026-09-02T18:30:00Z",
      "completed_at":null}
     """
 

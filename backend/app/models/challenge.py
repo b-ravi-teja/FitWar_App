@@ -180,9 +180,14 @@ class DailyChallengeProgress(UUIDPrimaryKeyMixin, Base):
         default=DailyProgressStatus.PENDING,
         nullable=False,
     )
-    # No FK yet — `verification_record` doesn't exist until the Verification phase,
-    # same treatment as UserProfile.avatar_media_id in Phase 1.
+    # The record that resolved this day. Constrained as of Phase 4, now that
+    # `verification_record` exists. Nullable while the day is still PENDING, and a day
+    # may accumulate several attempt records — this points at the one that decided it.
+    # use_alter breaks the circular dependency: verification_record references this
+    # table too, so neither can be created with the other's FK already in place.
     verification_record_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), nullable=True
+        PGUUID(as_uuid=True),
+        ForeignKey("verification_record.id", use_alter=True, name="fk_daily_progress_verification"),
+        nullable=True,
     )
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)

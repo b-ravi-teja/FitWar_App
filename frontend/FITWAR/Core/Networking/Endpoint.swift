@@ -25,6 +25,13 @@ enum JSONCoding {
     static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
+        // Dates must go out as ISO-8601 with an explicit offset. The default
+        // (`.deferredToDate`) writes a bare Double of seconds since Apple's 2001
+        // reference date, which the server reads as a Unix timestamp — landing the
+        // value in 1995 and failing validation for reasons that look nothing like the
+        // cause. Verification evidence is the first payload to carry a Date, so this
+        // is the first request that would have hit it.
+        encoder.dateEncodingStrategy = .iso8601
         return encoder
     }()
 

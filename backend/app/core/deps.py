@@ -25,8 +25,10 @@ from app.repositories.users import UserRepository
 from app.services.auth_service import AuthService
 from app.services.challenge_service import ChallengeService
 from app.services.group_service import GroupService
+from app.services.health_connection_service import HealthConnectionService
 from app.services.participation_service import ParticipationService
 from app.services.user_service import UserService
+from app.services.verification_service import VerificationService
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -94,6 +96,22 @@ def get_participation_service(session: DbSession) -> ParticipationService:
 
 
 ParticipationServiceDep = Annotated[ParticipationService, Depends(get_participation_service)]
+
+
+def get_verification_service(session: DbSession) -> VerificationService:
+    return VerificationService(session)
+
+
+VerificationServiceDep = Annotated[VerificationService, Depends(get_verification_service)]
+
+
+def get_health_connection_service(session: DbSession) -> HealthConnectionService:
+    return HealthConnectionService(session)
+
+
+HealthConnectionServiceDep = Annotated[
+    HealthConnectionService, Depends(get_health_connection_service)
+]
 
 
 # ---------------------------------------------------------------------------

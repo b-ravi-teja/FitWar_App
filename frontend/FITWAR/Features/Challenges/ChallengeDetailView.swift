@@ -11,9 +11,14 @@ struct ChallengeDetailView: View {
 
     @Environment(SessionManager.self) private var sessionManager
     @Environment(\.challengesService) private var challengesService
+    @Environment(\.verificationService) private var verificationService
+    @Environment(\.healthKitService) private var healthKitService
     @Environment(\.dismiss) private var dismiss
 
     @State private var viewModel: ChallengeDetailViewModel?
+    /// Non-nil while Today's Mission is presented. Sheet rather than a push: the
+    /// prototype treats verification as a focused drill-in, not a nav-stack level.
+    @State private var verifyingChallenge: ChallengeDetail?
 
     var body: some View {
         content
@@ -28,6 +33,22 @@ struct ChallengeDetailView: View {
                     )
                 }
                 await viewModel?.load()
+            }
+            .sheet(item: $verifyingChallenge) { challenge in
+                VerifyView(
+                    viewModel: VerifyViewModel(
+                        challenge: challenge,
+                        challenges: challengesService,
+                        verification: verificationService,
+                        health: healthKitService
+                    ),
+                    onCompleted: {
+                        verifyingChallenge = nil
+                        // Re-read from the server rather than mutating local state — the
+                        // day's status is the server's to report.
+                        Task { await viewModel?.load() }
+                    }
+                )
             }
     }
 
@@ -197,19 +218,24 @@ struct ChallengeDetailView: View {
                     Task { await viewModel?.join() }
                 }
             } else if challenge.myStatus == .active, challenge.status == .active {
-                // Verification is Phase 4. A disabled "OPEN TODAY'S MISSION" that leads
-                // nowhere would be a broken promise, so the state is named instead —
-                // in the design's own hint-box treatment rather than as loose text.
-                Text("You're in. Daily verification arrives with the Health phase.")
-                    .font(FWTypography.bodyMedium)
-                    .foregroundStyle(FWColor.textDim)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(FWSpacing.lg)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FWRadius.medium, style: .continuous)
-                            .strokeBorder(FWColor.line)
-                    )
+                if challenge.verificationMethod == .appleHealth {
+                    FITWARPrimaryButton(title: "OPEN TODAY'S MISSION") {
+                        verifyingChallenge = challenge
+                    }
+                } else {
+                    // Manual video proof needs the Media phase; naming the state beats a
+                    // button that leads nowhere.
+                    Text("Video proof arrives with the Media phase.")
+                        .font(FWTypography.bodyMedium)
+                        .foregroundStyle(FWColor.textDim)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(FWSpacing.lg)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: FWRadius.medium, style: .continuous)
+                                .strokeBorder(FWColor.line)
+                        )
+                }
             }
 
             if challenge.isLeavable {
