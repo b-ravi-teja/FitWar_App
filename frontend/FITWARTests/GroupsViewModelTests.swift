@@ -206,8 +206,8 @@ struct GroupDetailViewModelTests {
     @Test func rosterDefaultsToTheFirstTab() async {
         let (sut, _, _) = makeSUT()
         #expect(sut.selectedTab == .roster)
-        // CHAT is deliberately absent — realtime chat is a later phase.
-        #expect(GroupDetailViewModel.Tab.allCases.map(\.rawValue) == ["ROSTER", "FEED"])
+        // CHAT joined in Phase 6, once there was a real chat behind it.
+        #expect(GroupDetailViewModel.Tab.allCases.map(\.rawValue) == ["ROSTER", "FEED", "CHAT"])
     }
 
     @Test func ownerCannotLeaveSurfacesTheOwnerMessage() async {

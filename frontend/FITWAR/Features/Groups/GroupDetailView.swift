@@ -1,15 +1,17 @@
 import SwiftUI
 
 /// The Group screen — header (name, member/challenge meta, avatar stack), segmented
-/// tabs, then ROSTER or FEED. Reproduces the prototype's `group` screen exactly, minus
-/// the CHAT tab: realtime chat is a later phase, and a tab that opens onto nothing is
-/// worse than a tab that isn't there yet.
+/// tabs, then ROSTER, FEED or CHAT. Reproduces the prototype's `group` screen — the CHAT
+/// tab was held back until Phase 6, because a tab that opens onto nothing is worse than
+/// a tab that isn't there yet.
 struct GroupDetailView: View {
     let groupId: UUID
     var onLeft: () -> Void
 
     @Environment(SessionManager.self) private var sessionManager
     @Environment(\.groupsService) private var groupsService
+    @Environment(\.chatService) private var chatService
+    @Environment(\.realtimeClient) private var realtimeClient
     @Environment(\.challengesService) private var challengesService
     @Environment(\.dismiss) private var dismiss
 
@@ -58,23 +60,49 @@ struct GroupDetailView: View {
     }
 
     private func body(for loaded: GroupDetailViewModel.Content) -> some View {
-        ScrollView {
+        // Group so the shared modifiers below apply to both layouts.
+        Group {
+        // Chat owns its own scrolling and pins a composer to the bottom, so it is laid
+        // out outside the page's ScrollView. Nesting the two made the messages
+        // unreachable behind the tab bar — a scroll view inside a scroll view has no
+        // sensible height to negotiate.
+        if (viewModel?.selectedTab ?? .roster) == .chat {
             VStack(alignment: .leading, spacing: FWSpacing.lg + 2) {
                 header(loaded.group)
                 tabs
                     .padding(.horizontal, FWSpacing.screenHorizontal)
-
-                switch viewModel?.selectedTab ?? .roster {
-                case .roster:
-                    roster(loaded)
-                case .feed:
-                    feed(loaded)
-                }
+                ChatView(
+                    viewModel: ChatViewModel(
+                        groupId: groupId,
+                        chat: chatService,
+                        realtime: realtimeClient,
+                        sessionManager: sessionManager
+                    )
+                )
             }
             .padding(.top, 60)
-            .padding(.bottom, FWSpacing.xxl)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: FWSpacing.lg + 2) {
+                    header(loaded.group)
+                    tabs
+                        .padding(.horizontal, FWSpacing.screenHorizontal)
+
+                    switch viewModel?.selectedTab ?? .roster {
+                    case .roster:
+                        roster(loaded)
+                    case .feed:
+                        feed(loaded)
+                    case .chat:
+                        EmptyView()  // handled above
+                    }
+                }
+                .padding(.top, 60)
+                .padding(.bottom, FWSpacing.xxl)
+            }
+            .refreshable { await viewModel?.reload() }
         }
-        .refreshable { await viewModel?.reload() }
+        }
         .confirmationDialog(
             "Leave \(loaded.group.name)?",
             isPresented: $showLeaveConfirmation,

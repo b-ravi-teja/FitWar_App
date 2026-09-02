@@ -6,13 +6,13 @@ entry here — `challenge_service` and `verification_service` never name a provi
 
 from app.domain.verification.result import VerificationProvider
 from app.integrations.verification_providers.apple_health import AppleHealthProvider
+from app.integrations.verification_providers.manual_proof import ManualProofProvider
 
-# Keyed by `models.challenge.VerificationMethod` values. MANUAL_PROOF is deliberately
-# absent: it needs `MediaAsset` and the review workflow (§20.5), neither of which
-# exists yet, and registering a provider that cannot work would be worse than a
-# lookup that fails loudly.
+# Keyed by `models.challenge.VerificationMethod` values. Phase 6 added manual_proof,
+# which needed MediaAsset and the review workflow (§20.5) to exist first.
 _PROVIDERS: dict[str, VerificationProvider] = {
     "apple_health": AppleHealthProvider(),
+    "manual_proof": ManualProofProvider(),
 }
 
 

@@ -17,6 +17,9 @@ struct FITWARApp: App {
                 .environment(\.verificationService, dependencies.verificationService)
                 .environment(\.healthKitService, dependencies.healthKitService)
                 .environment(\.gameService, dependencies.gameService)
+                .environment(\.mediaService, dependencies.mediaService)
+                .environment(\.chatService, dependencies.chatService)
+                .environment(\.realtimeClient, dependencies.realtimeClient)
                 .preferredColorScheme(dependencies.themeManager.preference.colorScheme)
                 .task {
                     await dependencies.sessionManager.bootstrap()

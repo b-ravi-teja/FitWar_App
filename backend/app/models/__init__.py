@@ -9,6 +9,15 @@ from app.models.challenge import (
 )
 from app.models.game import Elimination, Warning, XPReason, XPTransaction
 from app.models.group import Group, GroupMember
+from app.models.media import (
+    GroupMessage,
+    MediaAsset,
+    MediaContextType,
+    MediaStatus,
+    MediaVisibility,
+    MessageReaction,
+    MessageType,
+)
 from app.models.user import User, UserProfile
 from app.models.verification import (
     HealthConnection,
@@ -26,9 +35,16 @@ __all__ = [
     "Elimination",
     "Group",
     "GroupMember",
+    "GroupMessage",
     "HealthConnection",
     "HealthConnectionStatus",
     "HealthProvider",
+    "MediaAsset",
+    "MediaContextType",
+    "MediaStatus",
+    "MediaVisibility",
+    "MessageReaction",
+    "MessageType",
     "RefreshToken",
     "User",
     "UserProfile",

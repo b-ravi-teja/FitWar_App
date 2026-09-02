@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.challenge import ChallengeParticipant, DailyChallengeProgress
 from app.models.verification import (
     HealthConnection,
     HealthConnectionStatus,
@@ -106,6 +107,51 @@ class VerificationRecordRepository:
             .order_by(VerificationRecord.created_at.asc())
         )
         return list(result.scalars().all())
+
+    async def pending_review_for_challenge(
+        self, challenge_id: uuid.UUID
+    ) -> list[tuple[VerificationRecord, ChallengeParticipant, str]]:
+        """The reviewer's queue, scoped to one challenge.
+
+        Four-table join, bounded by `status='pending_review'` — the index note in
+        Architecture §4.1 anticipated exactly this query and deliberately chose the join
+        over a denormalized challenge_id column.
+        """
+        from app.models.user import User, UserProfile
+
+        result = await self._session.execute(
+            select(VerificationRecord, ChallengeParticipant, UserProfile.display_name)
+            .join(
+                DailyChallengeProgress,
+                DailyChallengeProgress.id == VerificationRecord.daily_challenge_progress_id,
+            )
+            .join(
+                ChallengeParticipant,
+                ChallengeParticipant.id == DailyChallengeProgress.challenge_participant_id,
+            )
+            .join(User, User.id == ChallengeParticipant.user_id)
+            .join(UserProfile, UserProfile.user_id == User.id)
+            .where(
+                ChallengeParticipant.challenge_id == challenge_id,
+                VerificationRecord.status == VerificationStatus.PENDING_REVIEW,
+            )
+            .order_by(VerificationRecord.created_at.asc())
+        )
+        return [(row[0], row[1], row[2]) for row in result.all()]
+
+    async def progress_and_participant(
+        self, record: VerificationRecord
+    ) -> tuple[DailyChallengeProgress | None, ChallengeParticipant | None]:
+        result = await self._session.execute(
+            select(DailyChallengeProgress, ChallengeParticipant)
+            .join(
+                ChallengeParticipant,
+                ChallengeParticipant.id == DailyChallengeProgress.challenge_participant_id,
+            )
+            .where(DailyChallengeProgress.id == record.daily_challenge_progress_id)
+        )
+        row = result.first()
+        return (row[0], row[1]) if row else (None, None)
 
     async def add(
         self,

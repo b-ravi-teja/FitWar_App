@@ -14,6 +14,7 @@ struct ChallengeDetailView: View {
     @Environment(\.verificationService) private var verificationService
     @Environment(\.healthKitService) private var healthKitService
     @Environment(\.gameService) private var gameService
+    @Environment(\.mediaService) private var mediaService
     @Environment(\.dismiss) private var dismiss
 
     @State private var viewModel: ChallengeDetailViewModel?
@@ -22,6 +23,10 @@ struct ChallengeDetailView: View {
     @State private var verifyingChallenge: ChallengeDetail?
     /// Non-nil while the standings sheet is up.
     @State private var showingLeaderboard = false
+    @State private var showingProofPicker = false
+    @State private var showingReviewQueue = false
+    /// Held so the picker's callback can reach the live view model.
+    @State private var verifyViewModel: VerifyViewModel?
 
     var body: some View {
         content
@@ -45,19 +50,49 @@ struct ChallengeDetailView: View {
                 )
             }
             .sheet(item: $verifyingChallenge) { challenge in
+                // The view model is held in state so the video picker's callback can
+                // reach the same instance the sheet is rendering.
+                let verify = verifyViewModel ?? VerifyViewModel(
+                    challenge: challenge,
+                    challenges: challengesService,
+                    verification: verificationService,
+                    health: healthKitService,
+                    media: mediaService
+                )
                 VerifyView(
-                    viewModel: VerifyViewModel(
-                        challenge: challenge,
-                        challenges: challengesService,
-                        verification: verificationService,
-                        health: healthKitService
-                    ),
+                    viewModel: verify,
                     onCompleted: {
                         verifyingChallenge = nil
+                        verifyViewModel = nil
                         // Re-read from the server rather than mutating local state — the
                         // day's status is the server's to report.
                         Task { await viewModel?.load() }
-                    }
+                    },
+                    onSelectProof: { showingProofPicker = true }
+                )
+                .onAppear { verifyViewModel = verify }
+                .sheet(isPresented: $showingProofPicker) {
+                    ProofVideoPicker(
+                        onPicked: { data, contentType in
+                            showingProofPicker = false
+                            Task {
+                                await verify.submitProof(
+                                    videoData: data, contentType: contentType
+                                )
+                            }
+                        },
+                        onProblem: { problem in
+                            showingProofPicker = false
+                            verify.proofSelectionFailed(problem)
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showingReviewQueue) {
+                ProofReviewView(
+                    viewModel: ProofReviewViewModel(
+                        challengeId: challengeId, media: mediaService
+                    )
                 )
             }
     }
@@ -228,29 +263,23 @@ struct ChallengeDetailView: View {
                     Task { await viewModel?.join() }
                 }
             } else if challenge.myStatus == .active, challenge.status == .active {
-                if challenge.verificationMethod == .appleHealth {
-                    FITWARPrimaryButton(title: "OPEN TODAY'S MISSION") {
-                        verifyingChallenge = challenge
-                    }
-                } else {
-                    // Manual video proof needs the Media phase; naming the state beats a
-                    // button that leads nowhere.
-                    Text("Video proof arrives with the Media phase.")
-                        .font(FWTypography.bodyMedium)
-                        .foregroundStyle(FWColor.textDim)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(FWSpacing.lg)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: FWRadius.medium, style: .continuous)
-                                .strokeBorder(FWColor.line)
-                        )
+                // Both verification methods now lead somewhere real: HealthKit syncs,
+                // manual proof records and uploads a video.
+                FITWARPrimaryButton(title: "OPEN TODAY'S MISSION") {
+                    verifyingChallenge = challenge
                 }
             }
 
             // Standings are available to any participant or group member, running or
             // finished — the server decides who may read them.
             FITWARSecondaryButton(title: "VIEW STANDINGS") { showingLeaderboard = true }
+
+            // Shown for video-proof challenges. The server decides who may actually
+            // review; an unauthorized tap gets a clear 403 rather than a hidden button
+            // being the only guard.
+            if challenge.verificationMethod == .manualProof {
+                FITWARSecondaryButton(title: "REVIEW PROOF") { showingReviewQueue = true }
+            }
 
             if challenge.isLeavable {
                 FITWARSecondaryButton(

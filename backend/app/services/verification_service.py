@@ -34,6 +34,7 @@ from app.domain.verification.result import (
     VerificationContext,
     VerificationStatus,
 )
+from app.integrations.verification_providers.manual_proof import SOURCE as MANUAL_PROOF
 from app.integrations.verification_providers.registry import get_provider
 from app.models.challenge import (
     Challenge,
@@ -51,6 +52,7 @@ from app.repositories.verification import (
     VerificationRecordRepository,
 )
 from app.services.game_service import DayResolution, GameService
+from app.services.media_service import MediaService
 
 
 class VerificationOutcome:
@@ -82,6 +84,7 @@ class VerificationService:
         self._records = VerificationRecordRepository(session)
         self._connections = HealthConnectionRepository(session)
         self._game = GameService(session)
+        self._media = MediaService(session)
 
     async def submit(
         self,
@@ -91,6 +94,7 @@ class VerificationService:
         provider_name: str,
         evidence: HealthEvidence,
         raw_payload: dict[str, Any] | None = None,
+        media_id: uuid.UUID | None = None,
         now: datetime | None = None,
     ) -> VerificationOutcome:
         """Evaluate evidence for today and resolve the day.
@@ -160,6 +164,14 @@ class VerificationService:
             day_end_at=deadline,
             now=now,
         )
+        # Manual proof must reference a completed upload the caller owns. Checked before
+        # the provider runs so a proof can never be recorded without its video.
+        asset = None
+        if provider_name == MANUAL_PROOF:
+            if media_id is None:
+                raise InvalidEvidenceError("Video proof requires an uploaded file.")
+            asset = await self._media.require_processed(media_id, participant.user_id)
+
         result = provider.evaluate(context=context, evidence=evidence)
 
         # A malformed submission is a client error, not a stored attempt: recording it
@@ -178,6 +190,13 @@ class VerificationService:
             source_timestamp=result.source_timestamp,
             raw_payload=raw_payload,
         )
+
+        if asset is not None:
+            record.evidence_media_id = asset.id
+            asset.context_id = progress.id
+            # Pending review means protected from cleanup: the reviewer still has to
+            # watch it (§6, the mandatory rule).
+            await self._media.protect_from_cleanup(asset)
 
         resolution: DayResolution | None = None
         if result.verified:

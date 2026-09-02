@@ -1,6 +1,11 @@
 """Verification domain errors. Pure — no HTTP status codes (Architecture §12)."""
 
-from app.domain.common.exceptions import ConflictError, DomainError, NotFoundError
+from app.domain.common.exceptions import (
+    ConflictError,
+    DomainError,
+    ForbiddenError,
+    NotFoundError,
+)
 
 
 class InvalidEvidenceError(DomainError):
@@ -30,3 +35,24 @@ class HealthConnectionNotFoundError(NotFoundError):
     the lookup is owner-scoped, so this can't be used to probe for valid ids."""
 
     code = "HEALTH_CONNECTION_NOT_FOUND"
+
+
+class ProofNotFoundError(NotFoundError):
+    """Also returned when a proof belongs to a challenge the caller doesn't review —
+    an identical 404, so this cannot enumerate proofs outside the reviewer's scope."""
+
+    code = "PROOF_NOT_FOUND"
+
+
+class SelfReviewForbiddenError(ForbiddenError):
+    """A participant may never approve their own proof, whatever else they administer."""
+
+    code = "CANNOT_REVIEW_OWN_PROOF"
+
+
+class ProofAlreadyResolvedError(ConflictError):
+    code = "PROOF_ALREADY_RESOLVED"
+
+
+class NotAReviewerError(ForbiddenError):
+    code = "NOT_A_REVIEWER"

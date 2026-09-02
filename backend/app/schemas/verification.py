@@ -48,6 +48,9 @@ class HealthEvidenceRequest(BaseModel):
     unit: str = Field(min_length=1, max_length=16)
     period_start: datetime
     period_end: datetime
+    # Manual proof only: the completed upload this submission is evidence of. Ignored
+    # by health providers, required by manual_proof.
+    media_id: uuid.UUID | None = None
     source_name: str | None = Field(default=None, max_length=120)
     source_bundle_id: str | None = Field(default=None, max_length=200)
     was_user_entered: bool = False
@@ -63,7 +66,8 @@ class HealthEvidenceRequest(BaseModel):
 
 
 class SubmitVerificationRequest(BaseModel):
-    provider: HealthProvider
+    # Widened in Phase 6: manual_proof joins the health providers.
+    provider: str
     evidence: HealthEvidenceRequest
 
 

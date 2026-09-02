@@ -17,6 +17,7 @@ from app.domain.groups.exceptions import (
     NotAGroupAdminError,
     NotAGroupMemberError,
 )
+from app.domain.verification.exceptions import NotAReviewerError
 from app.models.challenge import Challenge, ChallengeParticipant
 from app.models.group import Group, GroupMember, GroupRole
 from app.models.user import User, UserStatus
@@ -24,10 +25,13 @@ from app.repositories.groups import GroupMemberRepository, GroupRepository
 from app.repositories.users import UserRepository
 from app.services.auth_service import AuthService
 from app.services.challenge_service import ChallengeService
+from app.services.chat_service import ChatService
 from app.services.game_service import GameService
 from app.services.group_service import GroupService
 from app.services.health_connection_service import HealthConnectionService
+from app.services.media_service import MediaService
 from app.services.participation_service import ParticipationService
+from app.services.proof_review_service import ProofReviewService
 from app.services.user_service import UserService
 from app.services.verification_service import VerificationService
 
@@ -111,6 +115,27 @@ def get_game_service(session: DbSession) -> GameService:
 
 
 GameServiceDep = Annotated[GameService, Depends(get_game_service)]
+
+
+def get_media_service(session: DbSession) -> MediaService:
+    return MediaService(session)
+
+
+MediaServiceDep = Annotated[MediaService, Depends(get_media_service)]
+
+
+def get_proof_review_service(session: DbSession) -> ProofReviewService:
+    return ProofReviewService(session)
+
+
+ProofReviewServiceDep = Annotated[ProofReviewService, Depends(get_proof_review_service)]
+
+
+def get_chat_service(session: DbSession) -> ChatService:
+    return ChatService(session)
+
+
+ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
 
 
 def get_health_connection_service(session: DbSession) -> HealthConnectionService:
@@ -199,6 +224,30 @@ async def challenge_participant_context(context: ChallengeViewer) -> ChallengeCo
 
 
 ChallengeParticipantContext = Annotated[ChallengeContext, Depends(challenge_participant_context)]
+
+
+async def challenge_reviewer_context(
+    context: ChallengeViewer, session: DbSession
+) -> ChallengeContext:
+    """403 unless the caller may review this challenge's manual proof (§7, §20.5).
+
+    The reviewer set is the challenge's creator plus the group's owner/admins — the same
+    flat role model everything else uses, with no new permission concept. Note this only
+    establishes *who may review this challenge*; refusing self-review is a separate rule
+    enforced per-proof in `ProofReviewService`, because a creator reviewing their own
+    submission is authorized here and still forbidden there.
+    """
+    if context.challenge.creator_id == context.user.id:
+        return context
+    member = await GroupMemberRepository(session).get_active(
+        context.challenge.group_id, context.user.id
+    )
+    if member is None or member.role not in (GroupRole.OWNER, GroupRole.ADMIN):
+        raise NotAReviewerError("You aren't a reviewer for this challenge.")
+    return context
+
+
+ChallengeReviewerContext = Annotated[ChallengeContext, Depends(challenge_reviewer_context)]
 
 
 async def challenge_editor_context(

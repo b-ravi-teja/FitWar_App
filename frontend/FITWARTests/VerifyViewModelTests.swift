@@ -16,7 +16,8 @@ struct VerifyViewModelTests {
             challenge: Fixture.challengeDetail(verificationMethod: verificationMethod),
             challenges: challenges,
             verification: verification,
-            health: health
+            health: health,
+            media: MockMediaService()
         )
         return (sut, challenges, verification, health)
     }

@@ -29,6 +29,25 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: fitwar_local
+      MINIO_ROOT_PASSWORD: fitwar_local_dev_secret
+    ports:
+      # 9000 = S3 API, 9001 = web console. Same collision-avoidance reasoning as the
+      # postgres/redis host ports above.
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - fitwar_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build:
       context: ../backend
@@ -41,6 +60,7 @@ services:
       DATABASE_HOST: postgres
       DATABASE_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
+      STORAGE_ENDPOINT_URL: http://minio:9000
     ports:
       - "8000:8000"
     volumes:
@@ -55,6 +75,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
 
 volumes:
   fitwar_postgres_data:
+  fitwar_minio_data:

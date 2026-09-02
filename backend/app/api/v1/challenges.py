@@ -1,7 +1,7 @@
 """Challenge and participation endpoints. Thin translation layer only."""
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, time
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
@@ -9,22 +9,28 @@ from fastapi import APIRouter, Query, status
 from app.core.deps import (
     ChallengeEditorContext,
     ChallengeParticipantContext,
+    ChallengeReviewerContext,
     ChallengeServiceDep,
     ChallengeViewer,
     CurrentUser,
     DbSession,
     GameServiceDep,
     GroupMemberContext,
+    MediaServiceDep,
     ParticipationServiceDep,
+    ProofReviewServiceDep,
     VerificationServiceDep,
 )
 from app.domain.challenges.challenge_day import day_index, day_start_utc, resolve_challenge_day
 from app.domain.challenges.failure_rule import Mode, describe
 from app.domain.verification.evidence import HealthEvidence
+from app.domain.verification.exceptions import ProofNotFoundError
 from app.models.challenge import Challenge, ChallengeParticipant, ChallengeStatus
-from app.repositories.challenges import ChallengeParticipantRepository
+from app.repositories.challenges import ChallengeParticipantRepository, DailyProgressRepository
 from app.repositories.game import GameRepository
 from app.repositories.groups import GroupRepository
+from app.repositories.media import MediaRepository
+from app.repositories.verification import VerificationRecordRepository
 from app.schemas.challenge import (
     ChallengeDetailResponse,
     ChallengeParticipantResponse,
@@ -39,6 +45,12 @@ from app.schemas.game import (
     LeaderboardResponse,
     MyChallengeGameStateResponse,
     WarningResponse,
+)
+from app.schemas.media import (
+    MediaAssetResponse,
+    PendingProofResponse,
+    ReviewProofRequest,
+    ReviewProofResponse,
 )
 from app.schemas.verification import (
     SubmitVerificationRequest,
@@ -391,7 +403,7 @@ async def submit_verification(
     outcome = await verification.submit(
         challenge=context.challenge,
         participant=context.participant,
-        provider_name=body.provider.value,
+        provider_name=body.provider,
         evidence=HealthEvidence(
             metric=evidence.metric,
             value=evidence.value,
@@ -403,6 +415,7 @@ async def submit_verification(
             was_user_entered=evidence.was_user_entered,
         ),
         raw_payload=body.model_dump(mode="json"),
+        media_id=evidence.media_id,
     )
     return SubmitVerificationResponse(
         verification=VerificationRecordResponse.model_validate(
@@ -495,4 +508,118 @@ async def get_my_game_state(
             for w in warnings
         ],
         eliminated_at=participant.eliminated_at,
+    )
+
+
+@challenges_router.get(
+    "/{challenge_id}/proofs/pending", response_model=list[PendingProofResponse]
+)
+async def list_pending_proofs(
+    context: ChallengeReviewerContext,
+    review: ProofReviewServiceDep,
+    media: MediaServiceDep,
+    session: DbSession,
+) -> list[PendingProofResponse]:
+    """The reviewer's queue for one challenge (§20.5).
+
+    `ChallengeReviewerContext` restricts this to the challenge's creator and the group's
+    admins — proof is private by default, and this is the only route that exposes another
+    participant's submission.
+    """
+    rows = await review.pending_for_challenge(context.challenge.id)
+    progress_repo = DailyProgressRepository(session)
+    out: list[PendingProofResponse] = []
+    for record, participant, display_name in rows:
+        asset = (
+            await MediaRepository(session).get(record.evidence_media_id)
+            if record.evidence_media_id
+            else None
+        )
+        progress = await progress_repo.get_by_id(record.daily_challenge_progress_id)
+        out.append(
+            PendingProofResponse(
+                verification_record_id=record.id,
+                participant_user_id=participant.user_id,
+                participant_display_name=display_name,
+                challenge_day=(
+                    datetime.combine(progress.challenge_day, time.min, tzinfo=UTC)
+                    if progress
+                    else None
+                ),
+                claimed_value=record.value,
+                target=record.target,
+                submitted_at=record.created_at,
+                media_id=record.evidence_media_id,
+                media_available=await media.playback_url(asset) is not None
+                if asset
+                else False,
+            )
+        )
+    return out
+
+
+@challenges_router.get(
+    "/{challenge_id}/proofs/{record_id}/media", response_model=MediaAssetResponse
+)
+async def get_proof_media(
+    record_id: uuid.UUID,
+    context: ChallengeReviewerContext,
+    review: ProofReviewServiceDep,
+    media: MediaServiceDep,
+    session: DbSession,
+) -> MediaAssetResponse:
+    """A short-lived signed URL for a proof under review.
+
+    Authorized by challenge, not by ownership — this is the one path by which someone
+    other than the owner may view a private proof, and it is scoped to reviewers of the
+    challenge that proof belongs to.
+    """
+    record = await VerificationRecordRepository(session).get(record_id)
+    if record is None or record.evidence_media_id is None:
+        raise ProofNotFoundError("No such proof.")
+    _, participant = await VerificationRecordRepository(session).progress_and_participant(
+        record
+    )
+    if participant is None or participant.challenge_id != context.challenge.id:
+        raise ProofNotFoundError("No such proof.")
+
+    asset = await MediaRepository(session).get(record.evidence_media_id)
+    if asset is None:
+        raise ProofNotFoundError("No such proof.")
+    return MediaAssetResponse(
+        id=asset.id,
+        status=asset.status,
+        content_type=asset.content_type,
+        size_bytes=asset.size_bytes,
+        playback_url=await media.playback_url(asset),
+        expires_at=asset.expires_at,
+        object_deleted_at=asset.object_deleted_at,
+    )
+
+
+@challenges_router.post(
+    "/{challenge_id}/proofs/{record_id}/review", response_model=ReviewProofResponse
+)
+async def review_proof(
+    record_id: uuid.UUID,
+    body: ReviewProofRequest,
+    context: ChallengeReviewerContext,
+    review: ProofReviewServiceDep,
+) -> ReviewProofResponse:
+    """Approve or reject. Approval runs the ordinary Phase 5 pipeline; nothing here
+    touches XP, score or streaks directly."""
+    outcome = await review.review(
+        record_id=record_id,
+        challenge=context.challenge,
+        reviewer_id=context.user.id,
+        approve=body.approve,
+        note=body.note,
+    )
+    return ReviewProofResponse(
+        verification_record_id=outcome.record.id,
+        status=outcome.record.status,
+        reviewed_at=outcome.record.reviewed_at,
+        already_resolved=outcome.already_resolved,
+        xp_awarded=outcome.resolution.xp_awarded if outcome.resolution else None,
+        current_streak=outcome.resolution.current_streak if outcome.resolution else None,
     )

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, challenges, groups, me
+from app.api.v1 import auth, challenges, chat, groups, me, media, ws
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -10,3 +10,6 @@ api_router.include_router(groups.router)
 # `/groups/{id}/challenges` for creation/listing inside a group (API_SPEC).
 api_router.include_router(challenges.group_challenges_router)
 api_router.include_router(challenges.challenges_router)
+api_router.include_router(media.router)
+api_router.include_router(chat.router)
+api_router.include_router(ws.router)

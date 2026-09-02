@@ -5,6 +5,9 @@ import SwiftUI
 struct VerifyView: View {
     @State var viewModel: VerifyViewModel
     var onCompleted: () -> Void = {}
+    /// Presents the system video picker. Owned by the parent so this view holds no
+    /// media-capture code of its own.
+    var onSelectProof: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: FWSpacing.xxl) {
@@ -130,6 +133,50 @@ struct VerifyView: View {
             VStack(alignment: .leading, spacing: FWSpacing.lg) {
                 statusBlock(title: "Something went wrong", detail: message)
                 FITWARSecondaryButton(title: "RETRY") { Task { await viewModel.load() } }
+            }
+
+        // ---- Manual video proof ----
+        case .awaitingProofSelection(let day):
+            VStack(alignment: .leading, spacing: FWSpacing.lg) {
+                targetBlock(day)
+                statusBlock(
+                    title: "Record your proof",
+                    detail: "This challenge is verified by video. Your clip stays private — "
+                        + "only a squad admin reviewing it can watch."
+                )
+                FITWARPrimaryButton(title: "SELECT VIDEO", action: onSelectProof)
+            }
+
+        case .uploadingProof(let day, let fraction):
+            VStack(alignment: .leading, spacing: FWSpacing.lg) {
+                targetBlock(day)
+                statusBlock(title: "Uploading proof…", detail: nil)
+                ProgressView(value: fraction).tint(FWColor.accent)
+            }
+
+        case .proofPendingReview(let day):
+            VStack(alignment: .leading, spacing: FWSpacing.lg) {
+                targetBlock(day)
+                statusBlock(
+                    title: "Pending review",
+                    detail: "Your proof is with a squad admin. You'll see the result here "
+                        + "once they've reviewed it."
+                )
+            }
+
+        case .proofApproved(let response):
+            VStack(alignment: .leading, spacing: FWSpacing.lg) {
+                statusBlock(title: "Proof approved", detail: "Your day is complete.")
+                if let resolution = response.resolution {
+                    xpBreakdown(resolution)
+                }
+                FITWARPrimaryButton(title: "DONE", action: onCompleted)
+            }
+
+        case .proofRejected(let reason):
+            VStack(alignment: .leading, spacing: FWSpacing.lg) {
+                statusBlock(title: "Proof rejected", detail: reason)
+                FITWARSecondaryButton(title: "TRY AGAIN") { Task { await viewModel.load() } }
             }
         }
     }

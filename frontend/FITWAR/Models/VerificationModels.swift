@@ -16,6 +16,8 @@ struct HealthEvidencePayload: Encodable, Sendable, Equatable {
     let sourceName: String?
     let sourceBundleId: String?
     let wasUserEntered: Bool
+    /// Manual proof only — the completed upload this submission is evidence of.
+    var mediaId: UUID? = nil
 }
 
 struct SubmitVerificationRequest: Encodable, Sendable {
@@ -26,6 +28,8 @@ struct SubmitVerificationRequest: Encodable, Sendable {
 enum HealthProviderKindDTO: String, Codable, Sendable {
     case appleHealth = "apple_health"
     case healthConnect = "health_connect"
+    /// Phase 6: video proof reviewed by a human, through the same verification contract.
+    case manualProof = "manual_proof"
 }
 
 enum VerificationStatus: String, Decodable, Sendable, Equatable {

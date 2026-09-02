@@ -255,6 +255,12 @@ enum FWNumber {
         grouped.string(from: value as NSDecimalNumber) ?? "\(value)"
     }
 
+    /// Unformatted decimal for the wire — `compact` inserts grouping separators, which
+    /// the server would reject as a malformed number.
+    static func plain(_ value: Decimal) -> String {
+        NSDecimalNumber(decimal: value).stringValue
+    }
+
     static func compact(_ value: Int) -> String {
         grouped.string(from: NSNumber(value: value)) ?? "\(value)"
     }

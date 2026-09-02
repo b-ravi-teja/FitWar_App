@@ -218,6 +218,12 @@ class DailyProgressRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_id(self, progress_id: uuid.UUID) -> DailyChallengeProgress | None:
+        result = await self._session.execute(
+            select(DailyChallengeProgress).where(DailyChallengeProgress.id == progress_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_or_create(
         self, participant_id: uuid.UUID, challenge_day: date
     ) -> DailyChallengeProgress:

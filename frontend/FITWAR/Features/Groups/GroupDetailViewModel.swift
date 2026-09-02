@@ -17,6 +17,8 @@ final class GroupDetailViewModel {
     enum Tab: String, CaseIterable {
         case roster = "ROSTER"
         case feed = "FEED"
+        // Phase 6: the prototype's third tab, now that chat actually exists.
+        case chat = "CHAT"
     }
 
     private(set) var state: LoadState<Content> = .loading

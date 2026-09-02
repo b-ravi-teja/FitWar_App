@@ -30,6 +30,11 @@ final class SessionManager {
     private let apiClient: APIClient
     private var accessToken: String?
 
+    /// The current access token, for the one caller that cannot use `APIClient`: a
+    /// WebSocket handshake can't carry custom headers, so the token goes in the query
+    /// string instead (see `WebSocketRealtimeClient`).
+    var currentAccessToken: String? { accessToken }
+
     init(authService: AuthServiceProtocol, keychain: KeychainStoring, apiClient: APIClient) {
         self.authService = authService
         self.keychain = keychain

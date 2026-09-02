@@ -11,6 +11,9 @@ final class AppDependencies {
     let challengesService: ChallengesServiceProtocol
     let verificationService: VerificationServiceProtocol
     let gameService: GameServiceProtocol
+    let mediaService: MediaServiceProtocol
+    let chatService: ChatServiceProtocol
+    let realtimeClient: RealtimeClientProtocol
     let keychain: KeychainStoring
     let sessionManager: SessionManager
     let themeManager: ThemeManager
@@ -26,6 +29,9 @@ final class AppDependencies {
         challengesService = ChallengesService(client: client)
         verificationService = VerificationService(client: client)
         gameService = GameService(client: client)
+        mediaService = MediaService(client: client)
+        chatService = ChatService(client: client)
+        realtimeClient = WebSocketRealtimeClient()
         keychain = KeychainStore()
         sessionManager = SessionManager(authService: authService, keychain: keychain, apiClient: client)
         themeManager = ThemeManager()

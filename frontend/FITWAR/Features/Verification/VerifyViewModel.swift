@@ -23,6 +23,26 @@ enum VerifyState: Sendable, Equatable {
     case rejected(String)
     case networkFailure
     case serverError(String)
+
+    // ---- Manual video proof (Phase 6) ----
+    /// This challenge is verified by video; the participant hasn't picked one yet.
+    case awaitingProofSelection(DailyProgress)
+    /// Bytes are going to object storage. `fraction` drives the existing progress UI.
+    case uploadingProof(DailyProgress, fraction: Double)
+    /// Uploaded and submitted; a reviewer now has to act.
+    case proofPendingReview(DailyProgress)
+    /// A reviewer approved it and the normal game result came back.
+    case proofApproved(SubmitVerificationResponse)
+    /// A reviewer rejected it.
+    case proofRejected(String)
+}
+
+/// Why a chosen video can't be used. Product-level reasons, never framework errors.
+enum ProofSelectionProblem: Sendable, Equatable {
+    case cancelled
+    case unsupportedType
+    case tooLarge(maxBytes: Int)
+    case unreadable
 }
 
 @MainActor
@@ -34,18 +54,25 @@ final class VerifyViewModel {
     private let challenges: ChallengesServiceProtocol
     private let verification: VerificationServiceProtocol
     private let health: HealthKitServicing
+    private let media: MediaServiceProtocol
 
     init(
         challenge: ChallengeDetail,
         challenges: ChallengesServiceProtocol,
         verification: VerificationServiceProtocol,
-        health: HealthKitServicing
+        health: HealthKitServicing,
+        media: MediaServiceProtocol
     ) {
         self.challenge = challenge
         self.challenges = challenges
         self.verification = verification
         self.health = health
+        self.media = media
     }
+
+    /// Which verification path this challenge uses. The screen branches on the
+    /// challenge's declared method, never on what the device happens to support.
+    var usesManualProof: Bool { challenge.verificationMethod == .manualProof }
 
     var challengeName: String { challenge.name }
     var activity: ActivityType { challenge.activityType }
@@ -61,6 +88,10 @@ final class VerifyViewModel {
     }
 
     func load() async {
+        if usesManualProof {
+            await loadManualProof()
+            return
+        }
         guard health.isAvailable else {
             state = .healthUnavailable
             return
@@ -152,6 +183,109 @@ final class VerifyViewModel {
             }
         } catch {
             state = Self.failure(from: error)
+        }
+    }
+
+    // MARK: - Manual video proof
+
+    private func loadManualProof() async {
+        state = .loadingDay
+        do {
+            let progress = try await challenges.fetchTodayProgress(challengeId: challenge.id)
+            // The server owns the day's status; the client just renders it.
+            switch progress.status {
+            case .completed:
+                state = .proofPendingReview(progress)
+                await refreshResolvedProof(progress)
+            case .pending, .missed, .excused:
+                state = .awaitingProofSelection(progress)
+            }
+        } catch {
+            state = Self.failure(from: error)
+        }
+    }
+
+    /// A completed day means a reviewer already approved it — reflect the real result.
+    private func refreshResolvedProof(_ progress: DailyProgress) async {
+        if progress.status == .completed {
+            state = .proofPendingReview(progress)
+        }
+    }
+
+    /// Validate, upload, and submit a chosen video.
+    ///
+    /// Size and type are checked here for a fast, clear message, and again by the
+    /// storage policy and the server — the client's check is a courtesy, not the control.
+    func submitProof(videoData: Data, contentType: String) async {
+        guard case .awaitingProofSelection(let day) = state else { return }
+
+        let allowed = ["video/mp4", "video/quicktime"]
+        guard allowed.contains(contentType.lowercased()) else {
+            state = .rejected("That file type can't be used as proof. Record a video instead.")
+            return
+        }
+
+        state = .uploadingProof(day, fraction: 0.05)
+        do {
+            let grant = try await media.prepareUpload(contentType: contentType)
+            guard videoData.count <= grant.maxBytes else {
+                let mb = grant.maxBytes / 1_048_576
+                state = .rejected("That video is too large. The limit is \(mb) MB.")
+                return
+            }
+
+            state = .uploadingProof(day, fraction: 0.35)
+            try await media.uploadData(videoData, to: grant, contentType: contentType)
+
+            state = .uploadingProof(day, fraction: 0.75)
+            _ = try await media.completeUpload(mediaId: grant.mediaId)
+
+            state = .uploadingProof(day, fraction: 0.9)
+            let response = try await verification.submitVerification(
+                challengeId: challenge.id,
+                request: SubmitVerificationRequest(
+                    provider: .manualProof,
+                    evidence: HealthEvidencePayload(
+                        metric: challenge.activityType,
+                        value: FWNumber.plain(challenge.targetValue),
+                        unit: challenge.unit,
+                        periodStart: day.windowStartAt,
+                        periodEnd: min(day.deadlineAt, Date()),
+                        sourceName: nil,
+                        sourceBundleId: Bundle.main.bundleIdentifier,
+                        wasUserEntered: false,
+                        mediaId: grant.mediaId
+                    )
+                )
+            )
+            // Submitted, not verified: a human still has to approve it.
+            state = response.dayStatus == .completed
+                ? .proofApproved(response)
+                : .proofPendingReview(day)
+        } catch {
+            state = Self.failure(from: error)
+        }
+    }
+
+    /// The picker was dismissed or the file couldn't be used.
+    func proofSelectionFailed(_ problem: ProofSelectionProblem) {
+        guard case .uploadingProof(let day, _) = state else {
+            if case .awaitingProofSelection = state, problem == .cancelled { return }
+            if problem == .cancelled { return }
+            state = .rejected(Self.message(for: problem))
+            return
+        }
+        state = problem == .cancelled
+            ? .awaitingProofSelection(day)
+            : .rejected(Self.message(for: problem))
+    }
+
+    private static func message(for problem: ProofSelectionProblem) -> String {
+        switch problem {
+        case .cancelled: "Proof upload cancelled."
+        case .unsupportedType: "That file type can't be used as proof."
+        case .tooLarge(let maxBytes): "That video is too large. The limit is \(maxBytes / 1_048_576) MB."
+        case .unreadable: "That video couldn't be read. Try recording it again."
         }
     }
 

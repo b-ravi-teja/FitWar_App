@@ -112,6 +112,34 @@ class RateLimitSettings(BaseSettings):
     password_reset_account_window_seconds: int = 3600
 
 
+class MediaSettings(BaseSettings):
+    """Media limits and the retention policy (Architecture §33).
+
+    Storage cost is an explicit product constraint: FITWAR keeps the competitive record
+    forever and the video for hours. Every value here is environment-configurable so a
+    deployment can tighten or loosen retention without a code change.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="MEDIA_", env_file=".env.local", extra="ignore")
+
+    # Proof video ceiling. Enforced by the presigned POST policy itself, so an oversized
+    # upload is rejected by storage rather than discovered afterwards.
+    max_proof_bytes: int = 250 * 1024 * 1024
+    allowed_video_types: list[str] = Field(
+        default_factory=lambda: ["video/mp4", "video/quicktime"]
+    )
+    # How long a presigned upload grant stays valid.
+    upload_url_ttl_seconds: int = 15 * 60
+    # How long a signed playback URL stays valid — short, because it grants read access
+    # to a private proof.
+    download_url_ttl_seconds: int = 5 * 60
+    # Hours a video survives after its proof is approved or rejected.
+    resolved_retention_hours: int = 24
+    # An upload that never becomes a submitted proof is abandoned; it expires far sooner
+    # because nothing references it and nobody is waiting on it.
+    abandoned_upload_ttl_hours: int = 6
+
+
 class Settings:
     """Single composition root. Construct once via `get_settings()`."""
 
@@ -120,6 +148,7 @@ class Settings:
         self.redis = RedisSettings()
         self.auth = AuthSettings()
         self.storage = StorageSettings()
+        self.media = MediaSettings()
         self.app = ApplicationSettings()
         self.rate_limit = RateLimitSettings()
 

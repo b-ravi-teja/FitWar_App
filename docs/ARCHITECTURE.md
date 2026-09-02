@@ -598,7 +598,7 @@ class VerificationProvider(Protocol):
 ```
 
 - `AppleHealthProvider` — ✅ **implemented** (Phase 4). Receives HealthKit query results the iOS client already fetched and normalized (the *server* still decides pass/fail against the challenge target; the client is not trusted to self-report "I passed"). `VERIFIED` requires a trusted source *and* a timestamp inside the challenge day; see §21 for the full contract.
-- `ManualProofProvider` — video/photo upload, `status = PENDING_REVIEW` until the challenge's creator/admin explicitly approves or rejects it (§20.5 has the full workflow and the deadline-driven resolution rule that keeps failure-rule timing deterministic regardless of how long review takes).
+- `ManualProofProvider` — ✅ **implemented** (Phase 6). Video upload, `status = PENDING_REVIEW` until the challenge's creator/admin explicitly approves or rejects it (§20.5 has the full workflow and the deadline-driven resolution rule that keeps failure-rule timing deterministic regardless of how long review takes).
 - `CameraAIProvider` (future, not built) — same interface, would just resolve `status` automatically instead of requiring human review. Not designed or scheduled for V1.
 
 Provider selection is driven by `Challenge.verification_method`, resolved through a small registry (`{method: provider_instance}`) in the service layer — adding Health Connect, Garmin, or Fitbit later is "write a new provider that returns `VerificationResult`," not "touch `challenge_service.py`."
@@ -611,7 +611,7 @@ Every V1 test for this module runs a **shared contract test suite** (`tests/cont
 
 Private verification proof and shareable group media are the same underlying object (`MediaAsset`) with different `visibility`, not two separate systems — a user can share a proof after the fact without re-uploading.
 
-- **Storage:** S3-compatible object storage (AWS S3 in prod, MinIO locally) behind an `ObjectStorage` protocol — never store video/image bytes in Postgres.
+- **Storage:** ✅ **implemented** (Phase 6). S3-compatible object storage (AWS S3 in prod, MinIO locally) behind an `ObjectStorage` protocol — never store video/image bytes in Postgres. See §23 for the retention policy that Phase 6 added.
 - **Upload flow:** client requests `POST /media/upload-url` → server returns a **presigned PUT URL** + a `MediaAsset` row in `status=pending` → client uploads directly to storage → client calls `POST /media/{id}/complete` → server verifies the object exists, checks size/type, flips `status=processed` (or `failed`). This keeps large files off the API server entirely.
 - **Visibility:** `private` (default for verification proof — only the owner and, for `manual_proof` challenges, group admins doing review can access via a short-lived signed GET URL) vs. `group_shared` (any active group member can access). Sharing is an explicit `POST /media/{id}/share` action, never automatic.
 - **Context, not folders:** `context_type` + `context_id` (e.g. `verification_proof` + `daily_challenge_progress.id`, or `chat` + `group_message.id`) lets one asset be referenced from multiple places without duplicating storage.
@@ -1048,4 +1048,135 @@ exactly one succeeds.
 erases. Nothing subscribes yet — Phase 6's realtime fanout, push and cache invalidation
 are the intended consumers, and building WebSocket infrastructure now to justify the
 publish would be premature.
+
+---
+
+## 23. Media, Manual Proof, Chat and Realtime (Phase 6)
+
+### 23.1 Object storage and the upload flow
+
+Postgres holds metadata; bytes live in S3-compatible storage (MinIO locally, any S3 API
+in production) behind the `ObjectStorage` protocol. Nothing above `integrations/` names S3.
+
+`POST /media/upload-url` → `MediaAsset(status=pending)` + a **presigned POST policy** →
+client uploads **directly to storage** → `POST /media/{id}/complete` → server reads size
+and content type back **from the object** and flips to `processed`.
+
+Security properties, all server-side:
+- The **storage key is server-generated** and namespaced `verification_proof/{owner_id}/{uuid}`.
+  A client can neither choose a key nor overwrite another user's object.
+- The grant is **short-lived** (15 min default) and pins content type *and* a maximum
+  length, so size/type limits are enforced by storage rather than promised by the client.
+- The app never holds bucket credentials — only a single-object, expiring grant.
+- Media reads are **owner-scoped**; another user's media id returns the same 404 a
+  missing one does. Reviewers reach a proof through the review route instead.
+
+### 23.2 Retention — storage cost is a product constraint
+
+FITWAR keeps the competitive record forever and the video for hours (§33).
+
+| Stage | `expires_at` |
+|---|---|
+| Uploaded, never submitted (**abandoned**) | now + `MEDIA_ABANDONED_UPLOAD_TTL_HOURS` (default 6h) |
+| Submitted, **pending review** | **NULL — protected.** The reviewer still has to watch it. This is the mandatory rule: a pending proof's video is never deleted. |
+| Approved **or** rejected | resolved_at + `MEDIA_RESOLVED_RETENTION_HOURS` (default 24h) |
+
+`MediaService.run_cleanup` deletes due objects and marks the row `expired` with
+`object_deleted_at`. It is **idempotent and crash-safe**: only non-NULL, past deadlines
+are considered (which structurally excludes pending proofs), storage delete is a no-op
+for an absent object, and rows already marked are skipped — so a partial failure simply
+retries. Run it with `python -m app.workers.media_cleanup` from cron or a CronJob;
+deliberately not a distributed worker framework, since the project has no queue and §7
+asks for the smallest explicit mechanism.
+
+**After deletion the metadata row remains**: proof decision, reviewer, timestamps,
+verification result, challenge/day link, and the XP/score outcome all survive. The API
+returns `playback_url: null` and `status: expired`, so the UI says "no longer available"
+instead of showing a player that will never load.
+
+### 23.3 Manual proof — one verification system, not two
+
+`ManualProofProvider` implements the same `VerificationProvider` protocol as Apple Health
+and returns `PENDING_REVIEW`: a video is not a number, and V1 has no computer vision. The
+shared provider contract suite in `tests/contract/` runs against **both** providers
+automatically.
+
+Approval routes into the **existing Phase 5 pipeline** (`GameService.apply_completion`).
+Nothing in the review path computes XP, score or streaks, so there is exactly one game
+system and manual proof is just another way to reach it. The proof entity *is*
+`VerificationRecord` — Phase 4 already modelled `status`, `reviewed_by_user_id`,
+`reviewed_at`, `review_note` and `evidence_media_id`, so no second workflow table exists.
+
+State machine: `PENDING_REVIEW → VERIFIED` (approve) or `→ REJECTED` (reject). Resolution
+is **immutable** — a resolved proof returns `already_resolved: true` unchanged rather
+than flipping, so approve→reject cannot rewrite a result.
+
+### 23.4 Reviewer authorization
+
+`challenge_reviewer` = the challenge's creator, plus the group's owner/admins. Enforced
+by a dependency that hits the database, never by hiding a button. Additionally:
+
+- A participant can **never** review their own proof, even if they are the creator —
+  that is a separate per-proof check, because being a reviewer of the challenge and
+  being the submitter are different facts.
+- A proof belonging to another challenge returns the same 404 a missing one does, so the
+  route cannot enumerate proofs outside the reviewer's scope.
+- **Proof is private by default.** Submitting never publishes to the feed, chat, or the
+  group. The reviewer route is the only path by which a non-owner can view one.
+
+### 23.5 Deadline behaviour
+
+Two distinct frozen rules, both preserved:
+
+- **Past the day's deadline, challenge still running** — a late approval still completes
+  the day and credits XP/streak, but never reverses a `Warning` or `Elimination` that
+  already fired (§20.5: elimination is a persisted decision, not something that un-happens).
+- **After the challenge is finalized** — refused with `409`. Phase 5 writes `outcome` once
+  and closed standings are immutable, so there is nothing a decision could still change.
+
+An eliminated or departed participant's approval records the day but grants no
+competitive credit — crediting score would resurrect them by the back door.
+
+### 23.6 Chat
+
+Small by design (§15): text, a fixed reaction set, and system messages the game emits.
+No voice, no DMs, no public rooms.
+
+**Postgres is the durable source of truth.** Membership is re-checked per request, so a
+user who left is blocked immediately. Pagination is keyset on **`(created_at, id)`** —
+the id is part of the cursor because timestamps tie (Postgres' `now()` is transaction
+time), and a timestamp-only cursor would skip every tied row and stall the walk.
+
+Reactions are idempotent in both directions: `UNIQUE(message, user, emoji)` with
+`ON CONFLICT DO NOTHING` makes a repeated add a no-op, and removing an absent reaction is
+simply nothing to delete. The emoji set is a fixed allow-list rather than an open field.
+
+Game events reach chat as **system messages**: the game system decides the event
+happened, and the chat layer only presents it. No game logic lives in chat services.
+
+### 23.7 Realtime — additive, never authoritative
+
+WebSocket gateway + Redis pub/sub. **Redis is transport only** and never a store: the
+message is persisted first, then published, so a Redis outage costs live delivery and
+nothing durable. `publish_realtime` never raises.
+
+**Authorization is per-resource, not per-token.** A valid JWT is not enough — group
+membership is checked before the socket is accepted. An unauthenticated caller, a
+non-member, and a nonexistent group all get the identical close code (4403), so nothing
+leaks about whether a private group exists. The token rides as a query parameter because
+a WebSocket handshake cannot carry custom headers.
+
+**Delivery is not exactly-once.** Clients treat events as *hints to re-read*, not as
+data: the iOS client refreshes over REST on every event and on reconnect, which is how
+anything missed while disconnected is recovered and why a duplicate event is harmless.
+Verified end to end: message delivered live, socket dropped, message posted while away,
+reconnect → REST reconciliation showed it.
+
+**REST fallback verified with Redis genuinely stopped**: posting returned 201 and history
+read back correctly throughout.
+
+### 23.8 Notifications
+
+No inbox screen in V1 (§20.6, unchanged). Phase 6 adds no notification surface; game
+events reach users through the group feed and chat system messages.
 

@@ -40,6 +40,22 @@ private struct GameServiceKey: EnvironmentKey {
     )
 }
 
+private struct MediaServiceKey: EnvironmentKey {
+    static let defaultValue: MediaServiceProtocol = MediaService(
+        client: APIClient(baseURL: AppConfig.apiBaseURL)
+    )
+}
+
+private struct ChatServiceKey: EnvironmentKey {
+    static let defaultValue: ChatServiceProtocol = ChatService(
+        client: APIClient(baseURL: AppConfig.apiBaseURL)
+    )
+}
+
+private struct RealtimeClientKey: EnvironmentKey {
+    static let defaultValue: RealtimeClientProtocol = WebSocketRealtimeClient()
+}
+
 private struct HealthKitServiceKey: EnvironmentKey {
     static let defaultValue: HealthKitServicing = HealthKitService()
 }
@@ -53,6 +69,21 @@ extension EnvironmentValues {
     var gameService: GameServiceProtocol {
         get { self[GameServiceKey.self] }
         set { self[GameServiceKey.self] = newValue }
+    }
+
+    var mediaService: MediaServiceProtocol {
+        get { self[MediaServiceKey.self] }
+        set { self[MediaServiceKey.self] = newValue }
+    }
+
+    var chatService: ChatServiceProtocol {
+        get { self[ChatServiceKey.self] }
+        set { self[ChatServiceKey.self] = newValue }
+    }
+
+    var realtimeClient: RealtimeClientProtocol {
+        get { self[RealtimeClientKey.self] }
+        set { self[RealtimeClientKey.self] = newValue }
     }
 
     var healthKitService: HealthKitServicing {
