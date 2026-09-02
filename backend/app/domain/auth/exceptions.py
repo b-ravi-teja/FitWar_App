@@ -34,3 +34,7 @@ class UnauthenticatedError(DomainError):
     """Missing/malformed/expired access token, or its user no longer exists or is inactive."""
 
     code = "UNAUTHENTICATED"
+
+
+class ResetTokenInvalidError(DomainError):
+    code = "RESET_TOKEN_INVALID_OR_EXPIRED"

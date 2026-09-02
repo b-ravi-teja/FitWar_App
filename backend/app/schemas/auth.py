@@ -30,3 +30,12 @@ class TokenResponse(BaseModel):
 
 class RegisterResponse(TokenResponse):
     user_id: uuid.UUID
+
+
+class PasswordResetRequestRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)

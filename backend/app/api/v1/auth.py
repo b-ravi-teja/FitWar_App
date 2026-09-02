@@ -6,6 +6,8 @@ from app.core.deps import AuthServiceDep
 from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequestRequest,
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
@@ -38,3 +40,19 @@ async def refresh(body: RefreshRequest, auth_service: AuthServiceDep) -> TokenRe
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(body: LogoutRequest, auth_service: AuthServiceDep) -> None:
     await auth_service.logout(raw_refresh_token=body.refresh_token)
+
+
+@router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
+async def request_password_reset(
+    body: PasswordResetRequestRequest, auth_service: AuthServiceDep
+) -> None:
+    # Always 202, regardless of whether the email exists (ADR 0007) — never a signal
+    # for account enumeration.
+    await auth_service.request_password_reset(email=body.email)
+
+
+@router.post("/password-reset/confirm", status_code=status.HTTP_200_OK)
+async def confirm_password_reset(
+    body: PasswordResetConfirmRequest, auth_service: AuthServiceDep
+) -> None:
+    await auth_service.confirm_password_reset(token=body.token, new_password=body.new_password)

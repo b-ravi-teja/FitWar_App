@@ -6,6 +6,7 @@ coverage, because they're pure orchestration logic and should run in millisecond
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
@@ -16,6 +17,7 @@ from app.domain.auth.exceptions import (
     InvalidCredentialsError,
     RefreshTokenInvalidError,
     RefreshTokenReuseDetectedError,
+    ResetTokenInvalidError,
 )
 from app.models.auth import RefreshToken
 from app.models.user import User, UserProfile, UserStatus
@@ -43,6 +45,9 @@ class FakeUserRepository:
     async def soft_delete(self, user: User) -> None:
         user.status = UserStatus.DELETED
         user.deleted_at = datetime.now(UTC)
+
+    async def update_password_hash(self, user: User, *, password_hash: str) -> None:
+        user.password_hash = password_hash
 
 
 class FakeRefreshTokenRepository:
@@ -73,13 +78,49 @@ class FakeRefreshTokenRepository:
             if token.family_id == family_id and token.revoked_at is None:
                 token.revoked_at = datetime.now(UTC)
 
+    async def revoke_all_for_user(self, user_id: uuid.UUID) -> None:
+        for token in self.by_hash.values():
+            if token.user_id == user_id and token.revoked_at is None:
+                token.revoked_at = datetime.now(UTC)
+
+
+class FakePasswordResetTokenRepository:
+    def __init__(self) -> None:
+        self.by_token: dict[str, uuid.UUID] = {}
+
+    async def store(self, *, raw_token: str, user_id: uuid.UUID) -> None:
+        self.by_token[raw_token] = user_id
+
+    async def consume(self, raw_token: str) -> uuid.UUID | None:
+        return self.by_token.pop(raw_token, None)
+
+
+class FakeEmailSender:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+
+    async def send_password_reset(self, *, to: str, token: str) -> None:
+        self.sent.append((to, token))
+
 
 @pytest.fixture
 def auth_service() -> AuthService:
     service = AuthService.__new__(AuthService)  # bypass __init__ (no real session)
     service._users = FakeUserRepository()
     service._refresh_tokens = FakeRefreshTokenRepository()
+    service._reset_tokens = FakePasswordResetTokenRepository()
+    service._email_sender = FakeEmailSender()
     return service
+
+
+def _fake_email_sender(service: AuthService) -> FakeEmailSender:
+    """The service depends on the `EmailSender` protocol, which has no `.sent` —
+    this recovers the concrete fake so tests can inspect what was "sent"."""
+    return cast(FakeEmailSender, service._email_sender)
+
+
+def _fake_reset_tokens(service: AuthService) -> FakePasswordResetTokenRepository:
+    return cast(FakePasswordResetTokenRepository, service._reset_tokens)
 
 
 async def test_register_creates_user_and_tokens(auth_service: AuthService) -> None:
@@ -188,3 +229,61 @@ async def test_logout_unknown_token_is_a_noop(auth_service: AuthService) -> None
 
 def test_password_hash_helper_is_argon2() -> None:
     assert hash_password("x").startswith("$argon2")
+
+
+async def test_request_password_reset_for_existing_email_stores_token_and_sends_email(
+    auth_service: AuthService,
+) -> None:
+    await auth_service.register(email="ravi@example.com", password="hunter22", display_name="R")
+
+    await auth_service.request_password_reset(email="ravi@example.com")
+
+    sent = _fake_email_sender(auth_service).sent
+    assert len(sent) == 1
+    to, token = sent[0]
+    assert to == "ravi@example.com"
+    assert token in _fake_reset_tokens(auth_service).by_token
+
+
+async def test_request_password_reset_for_unknown_email_is_a_silent_noop(
+    auth_service: AuthService,
+) -> None:
+    """Never reveals whether the account exists (ADR 0007) — same outward behavior
+    (no exception, no email sent) as a real account, just nothing happens."""
+    await auth_service.request_password_reset(email="ghost@example.com")
+    assert _fake_email_sender(auth_service).sent == []
+
+
+async def test_confirm_password_reset_updates_password_and_revokes_sessions(
+    auth_service: AuthService,
+) -> None:
+    _, tokens = await auth_service.register(
+        email="ravi@example.com", password="oldpassword1", display_name="R"
+    )
+    await auth_service.request_password_reset(email="ravi@example.com")
+    _, raw_token = _fake_email_sender(auth_service).sent[0]
+
+    await auth_service.confirm_password_reset(token=raw_token, new_password="newpassword1")
+
+    # Old session is dead...
+    with pytest.raises(RefreshTokenReuseDetectedError):
+        await auth_service.refresh(raw_refresh_token=tokens.refresh_token)
+    # ...and the new password actually works.
+    _, new_tokens = await auth_service.login(email="ravi@example.com", password="newpassword1")
+    assert new_tokens.access_token
+
+
+async def test_confirm_password_reset_token_is_single_use(auth_service: AuthService) -> None:
+    await auth_service.register(email="ravi@example.com", password="oldpassword1", display_name="R")
+    await auth_service.request_password_reset(email="ravi@example.com")
+    _, raw_token = _fake_email_sender(auth_service).sent[0]
+
+    await auth_service.confirm_password_reset(token=raw_token, new_password="newpassword1")
+
+    with pytest.raises(ResetTokenInvalidError):
+        await auth_service.confirm_password_reset(token=raw_token, new_password="anotherpassword1")
+
+
+async def test_confirm_password_reset_unrecognized_token_raises(auth_service: AuthService) -> None:
+    with pytest.raises(ResetTokenInvalidError):
+        await auth_service.confirm_password_reset(token="never-issued", new_password="newpassword1")

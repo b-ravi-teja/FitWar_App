@@ -13,6 +13,7 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.redis import get_redis
 from app.core.security import (
     create_access_token,
     generate_refresh_token,
@@ -26,9 +27,13 @@ from app.domain.auth.exceptions import (
     InvalidCredentialsError,
     RefreshTokenInvalidError,
     RefreshTokenReuseDetectedError,
+    ResetTokenInvalidError,
 )
+from app.integrations.email.base import EmailSender
+from app.integrations.email.logging_sender import LoggingEmailSender
 from app.models.auth import RefreshToken
 from app.models.user import User, UserStatus
+from app.repositories.password_reset_tokens import PasswordResetTokenRepository
 from app.repositories.refresh_tokens import RefreshTokenRepository
 from app.repositories.users import UserRepository
 
@@ -45,8 +50,10 @@ class UserRepositoryProtocol(Protocol):
     SQLAlchemy-backed class, so fakes in unit tests are legitimately type-compatible."""
 
     async def get_by_email(self, email: str) -> User | None: ...
+    async def get_by_id(self, user_id: uuid.UUID) -> User | None: ...
     async def create(self, *, email: str, password_hash: str, display_name: str) -> User: ...
     async def soft_delete(self, user: User) -> None: ...
+    async def update_password_hash(self, user: User, *, password_hash: str) -> None: ...
 
 
 class RefreshTokenRepositoryProtocol(Protocol):
@@ -56,15 +63,31 @@ class RefreshTokenRepositoryProtocol(Protocol):
     async def get_by_hash(self, token_hash: str) -> RefreshToken | None: ...
     async def revoke(self, token: RefreshToken) -> None: ...
     async def revoke_family(self, family_id: uuid.UUID) -> None: ...
+    async def revoke_all_for_user(self, user_id: uuid.UUID) -> None: ...
+
+
+class PasswordResetTokenRepositoryProtocol(Protocol):
+    async def store(self, *, raw_token: str, user_id: uuid.UUID) -> None: ...
+    async def consume(self, raw_token: str) -> uuid.UUID | None: ...
 
 
 class AuthService:
     _users: UserRepositoryProtocol
     _refresh_tokens: RefreshTokenRepositoryProtocol
+    _reset_tokens: PasswordResetTokenRepositoryProtocol
+    _email_sender: EmailSender
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        reset_tokens: PasswordResetTokenRepositoryProtocol | None = None,
+        email_sender: EmailSender | None = None,
+    ) -> None:
         self._users = UserRepository(session)
         self._refresh_tokens = RefreshTokenRepository(session)
+        self._reset_tokens = reset_tokens or PasswordResetTokenRepository(get_redis())
+        self._email_sender = email_sender or LoggingEmailSender()
 
     async def register(
         self, *, email: str, password: str, display_name: str
@@ -109,6 +132,31 @@ class AuthService:
         stored = await self._refresh_tokens.get_by_hash(hash_refresh_token(raw_refresh_token))
         if stored is not None and stored.revoked_at is None:
             await self._refresh_tokens.revoke(stored)
+
+    async def request_password_reset(self, *, email: str) -> None:
+        """Always succeeds from the caller's perspective, regardless of whether the
+        email exists (ADR 0007 / this phase's §13 — never a signal for account
+        enumeration)."""
+        user = await self._users.get_by_email(email)
+        if user is None:
+            return
+        raw_token = generate_refresh_token()  # same high-entropy opaque-token shape
+        await self._reset_tokens.store(raw_token=raw_token, user_id=user.id)
+        await self._email_sender.send_password_reset(to=email, token=raw_token)
+
+    async def confirm_password_reset(self, *, token: str, new_password: str) -> None:
+        user_id = await self._reset_tokens.consume(token)
+        if user_id is None:
+            raise ResetTokenInvalidError("This reset code is invalid or has expired.")
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise ResetTokenInvalidError("This reset code is invalid or has expired.")
+
+        await self._users.update_password_hash(user, password_hash=hash_password(new_password))
+        # A password reset is a full re-authentication event (ADR 0007) — every
+        # outstanding refresh token for this user is revoked, not just one family.
+        await self._refresh_tokens.revoke_all_for_user(user_id)
 
     async def _issue_tokens(self, user_id: uuid.UUID, *, family_id: uuid.UUID) -> TokenPair:
         settings = get_settings().auth

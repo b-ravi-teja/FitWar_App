@@ -16,6 +16,7 @@ from app.domain.auth.exceptions import (
     InvalidCredentialsError,
     RefreshTokenInvalidError,
     RefreshTokenReuseDetectedError,
+    ResetTokenInvalidError,
     UnauthenticatedError,
     UserNotFoundError,
 )
@@ -45,6 +46,7 @@ _STATUS_MAP: dict[type[DomainError], int] = {
     RefreshTokenReuseDetectedError: status.HTTP_401_UNAUTHORIZED,
     UserNotFoundError: status.HTTP_404_NOT_FOUND,
     UnauthenticatedError: status.HTTP_401_UNAUTHORIZED,
+    ResetTokenInvalidError: status.HTTP_400_BAD_REQUEST,
 }
 
 

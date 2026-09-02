@@ -38,3 +38,12 @@ class RefreshTokenRepository:
             .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=datetime.now(UTC))
         )
+
+    async def revoke_all_for_user(self, user_id: uuid.UUID) -> None:
+        """Password reset is a full re-authentication event (ADR 0007) — every
+        outstanding refresh token for the user is revoked, not just one family."""
+        await self._session.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(UTC))
+        )
