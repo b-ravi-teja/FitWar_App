@@ -1,12 +1,46 @@
+# --- OS / editor ---
 .DS_Store
+.vscode/
+.idea/
+
+# --- Python ---
 *.pyc
 __pycache__/
 .venv/
+venv/
 *.egg-info/
-.env.local
-.env.test
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 htmlcov/
 .coverage
+
+# --- Environment / secrets ---
+# Only .env.example is tracked; every real env file stays local.
+.env
+.env.local
+.env.test
+.env.*.local
+
+# --- Xcode ---
+# Tracked: project.pbxproj, contents.xcworkspacedata, xcshareddata/ (shared schemes).
+# Ignored: per-user state and build output.
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+build/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Device-specific local override for the API base URL (see App/Config/Debug.xcconfig)
+*.local.xcconfig
+
+# --- Swift Package Manager ---
+.build/
+Packages/
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/.build/
