@@ -61,7 +61,7 @@ class RefreshTokenRepositoryProtocol(Protocol):
         self, *, user_id: uuid.UUID, token_hash: str, family_id: uuid.UUID, expires_at: datetime
     ) -> RefreshToken: ...
     async def get_by_hash(self, token_hash: str) -> RefreshToken | None: ...
-    async def revoke(self, token: RefreshToken) -> None: ...
+    async def revoke(self, token: RefreshToken) -> bool: ...
     async def revoke_family(self, family_id: uuid.UUID) -> None: ...
     async def revoke_all_for_user(self, user_id: uuid.UUID) -> None: ...
 
@@ -72,6 +72,7 @@ class PasswordResetTokenRepositoryProtocol(Protocol):
 
 
 class AuthService:
+    _session: AsyncSession
     _users: UserRepositoryProtocol
     _refresh_tokens: RefreshTokenRepositoryProtocol
     _reset_tokens: PasswordResetTokenRepositoryProtocol
@@ -84,6 +85,7 @@ class AuthService:
         reset_tokens: PasswordResetTokenRepositoryProtocol | None = None,
         email_sender: EmailSender | None = None,
     ) -> None:
+        self._session = session
         self._users = UserRepository(session)
         self._refresh_tokens = RefreshTokenRepository(session)
         self._reset_tokens = reset_tokens or PasswordResetTokenRepository(get_redis())
@@ -117,16 +119,36 @@ class AuthService:
             raise RefreshTokenInvalidError("Refresh token not recognized.")
 
         if stored.revoked_at is not None:
-            # A revoked token was presented again — treat as possible theft and
-            # revoke the whole family, not just this token (Architecture §6).
-            await self._refresh_tokens.revoke_family(stored.family_id)
+            await self._revoke_family_for_reuse(stored.family_id)
             raise RefreshTokenReuseDetectedError("Refresh token has already been used.")
 
         if stored.expires_at < datetime.now(UTC):
             raise RefreshTokenInvalidError("Refresh token has expired.")
 
-        await self._refresh_tokens.revoke(stored)
+        # Rotation is decided by the database, not by the read above: `revoke` only
+        # succeeds if this request is the one that flipped `revoked_at`. A concurrent
+        # request that already rotated this token makes this return False, and a second
+        # token minted from one presentation is exactly what reuse detection is for.
+        if not await self._refresh_tokens.revoke(stored):
+            await self._revoke_family_for_reuse(stored.family_id)
+            raise RefreshTokenReuseDetectedError("Refresh token has already been used.")
+
         return await self._issue_tokens(stored.user_id, family_id=stored.family_id)
+
+    async def _revoke_family_for_reuse(self, family_id: uuid.UUID) -> None:
+        """Revoke the whole family and **commit it**, then let the caller raise.
+
+        The commit is the point. `get_db` rolls the request's transaction back on any
+        exception, so revoking and then raising — which is what this code used to do —
+        discarded the revocation: the 401 was returned, the theft response was not
+        persisted, and every token in the family kept working. That made Architecture
+        §6's stolen-token mitigation a no-op in practice.
+
+        Committing here is safe because nothing else is pending on this request: the
+        refresh path has written nothing before this point.
+        """
+        await self._refresh_tokens.revoke_family(family_id)
+        await self._session.commit()
 
     async def logout(self, *, raw_refresh_token: str) -> None:
         stored = await self._refresh_tokens.get_by_hash(hash_refresh_token(raw_refresh_token))

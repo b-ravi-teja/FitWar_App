@@ -3,8 +3,9 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.models.media import MediaStatus, MessageType
 from app.models.verification import VerificationStatus
@@ -98,7 +99,13 @@ class ChatPageResponse(BaseModel):
 
 
 class PostMessageRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=1000)
+    """`min_length` alone is not enough: it counts characters, so "   " passes it and
+    persists a message that renders as an empty bubble nobody can delete. The content is
+    stripped first and then required to be non-empty."""
+
+    content: Annotated[str, StringConstraints(strip_whitespace=True)] = Field(
+        min_length=1, max_length=1000
+    )
 
 
 class ReactionRequest(BaseModel):

@@ -124,6 +124,51 @@ class ChallengeRepository:
         )
         return list(result.scalars().all())
 
+    async def lock(self, challenge_id: uuid.UUID) -> Challenge | None:
+        """`SELECT … FOR UPDATE` on the challenge row.
+
+        Taken before the participant-limit check so that counting and inserting cannot
+        interleave: without it, several joiners all read a count below the limit and all
+        insert, and a challenge capped at two ends up with five. A limit is not
+        expressible as a table constraint, so serializing the check is what enforces it.
+
+        `populate_existing` for the reason Phase 7 established — the caller has already
+        loaded this challenge, so without it the lock would hand back the identity-mapped
+        instance's pre-lock attributes.
+        """
+        result = await self._session.execute(
+            select(Challenge)
+            .where(Challenge.id == challenge_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_resolvable(self, now: datetime, *, limit: int) -> list[uuid.UUID]:
+        """Ids of challenges the deadline sweep should visit.
+
+        Deliberately ids, not entities: the sweep processes each challenge in its own
+        transaction, so holding ORM objects loaded by a different session would be
+        misleading. Battles are included — their backing 1v1 challenges have deadlines
+        too, and they are excluded from the *listing* helpers only so they stay out of
+        the WARS tab (§24.2).
+
+        A DRAFT challenge whose start has passed is included: it needs to become ACTIVE
+        before any of its days can be resolved.
+        """
+        result = await self._session.execute(
+            select(Challenge.id)
+            .where(
+                Challenge.status.in_(
+                    (ChallengeStatus.DRAFT, ChallengeStatus.ACTIVE)
+                ),
+                Challenge.start_at <= now,
+            )
+            .order_by(Challenge.start_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def flush(self) -> None:
         await self._session.flush()
 
@@ -204,6 +249,27 @@ class ChallengeParticipantRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def active_challenge_counts_for_group(
+        self, group_id: uuid.UUID
+    ) -> dict[uuid.UUID, int]:
+        """`{user_id: active challenge count}` for the whole group in one query.
+
+        The roster endpoint previously called `active_challenge_ids_for_group_member`
+        once per member — a textbook N+1 that grew from 9 statements at 3 members to 31
+        at 25. Battles stay excluded, exactly as the per-member version excluded them.
+        """
+        result = await self._session.execute(
+            select(ChallengeParticipant.user_id, func.count())
+            .join(Challenge, Challenge.id == ChallengeParticipant.challenge_id)
+            .where(
+                Challenge.group_id == group_id,
+                Challenge.status == ChallengeStatus.ACTIVE,
+                _NOT_A_BATTLE,
+            )
+            .group_by(ChallengeParticipant.user_id)
+        )
+        return {row[0]: row[1] for row in result.all()}
 
     async def set_status(
         self, participant: ChallengeParticipant, status: ParticipantStatus

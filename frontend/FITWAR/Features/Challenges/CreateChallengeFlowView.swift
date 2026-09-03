@@ -139,7 +139,7 @@ struct CreateChallengeFlowView: View {
         VStack(alignment: .leading, spacing: FWSpacing.lg + 2) {
             stepTitle("Choose the game mode")
 
-            ForEach(GameMode.allCases, id: \.self) { mode in
+            ForEach(GameMode.selectable, id: \.self) { mode in
                 ModeSelectCard(
                     name: mode.displayName,
                     tag: mode.tag,

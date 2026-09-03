@@ -208,6 +208,24 @@ be one Health can measure (`steps`, `active_calories`, `distance`). `pushups` re
 `409 INVALID_BATTLE_CONFIG` — video proof needs a reviewer who is not competing, and a
 two-player contest has none (ADR 0009).
 
+## Error Contract — verified behaviour
+
+Every error response uses the Problem Details envelope
+(`{ type, title, status, detail, code }`), including validation failures. This was
+exercised directly in Phase 8 against malformed input on every public surface: invalid
+UUIDs, oversized and negative numbers, unknown enum values, naive timestamps, inverted
+periods, malformed JSON, 3 MB bodies, and 400-level-deep nesting. Two paths returned 500
+and are fixed (Architecture §25.6); the rest already answered 4xx.
+
+- **No stack traces reach clients in production.** `APP_DEBUG=true` makes Starlette
+  render a traceback *instead of* this envelope, so the boot guard in `core/config.py`
+  refuses to start a production environment with it on (§25.5).
+- **Extra request fields are ignored, never applied.** Posting `score`, `winner_user_id`,
+  `xp_awarded` or `rank` alongside real evidence changes nothing — verified against the
+  running server for both challenge and battle verification.
+- **`429` carries `retry_after_seconds`** plus a standard `Retry-After` header, and is
+  the only response with that field.
+
 ## Notifications
 
 **Resolved (design spec §18 unknown #6, ADR 0006):** no dedicated notification-inbox screen in V1 iOS. The API is built regardless — push delivery depends on the persisted `Notification` row existing either way (Phase 0 §10), and `unread-count` backs the nav badge dot.

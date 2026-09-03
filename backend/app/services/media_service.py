@@ -178,20 +178,30 @@ class MediaService:
         - Only rows with a non-null `expires_at` in the past are considered, so a
           pending-review proof (NULL deadline) is structurally excluded.
         - Storage delete is a no-op for an already-absent object.
-        - The row is marked EXPIRED with `object_deleted_at` only after the delete call,
-          and rows already marked are skipped — so a partial failure just retries.
+        - The row is marked EXPIRED with `object_deleted_at` **only when storage actually
+          confirmed the delete**. A failed delete leaves the row untouched so the next
+          pass retries it; recording it as gone would orphan the bytes forever behind
+          metadata claiming they were removed.
+        - One object's failure does not abort the sweep — the rest of the batch still runs.
         - The metadata row is kept: decision, reviewer, timestamps and competitive
           outcome all survive the video (§6).
         """
         now = now or datetime.now(UTC)
         due = await self._repo.due_for_deletion(now, limit=limit)
         deleted = 0
+        failed = 0
         for asset in due:
-            self._storage.delete(key=asset.storage_key)
+            if not self._storage.delete(key=asset.storage_key):
+                failed += 1
+                continue
             asset.status = MediaStatus.EXPIRED
             asset.object_deleted_at = now
             deleted += 1
             logger.info("media_object_deleted", media_id=str(asset.id))
         if deleted:
             await self._session.flush()
+        if failed:
+            # Surfaced rather than swallowed: a persistent non-zero count here means
+            # storage is rejecting deletes and retention has silently stopped working.
+            logger.warning("media_cleanup_deletes_failed", failed=failed, attempted=len(due))
         return deleted

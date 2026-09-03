@@ -1383,3 +1383,136 @@ holding — regression-tested by handing it a battle where the caller scored 100
 9,999 and the server says they won, and requiring Victory. The split "vs" bar renders two
 server scores as a ratio and decides nothing; the countdown renders the server's
 `time_remaining_seconds` rather than recomputing it against the device clock.
+
+---
+
+## 25. Production Hardening (Phase 8)
+
+An audit pass over Phases 0–7. No product rules changed; §20's frozen decisions are
+untouched. What follows records the defects found, the two scheduled jobs the design
+always assumed, and the guards that now enforce what documentation previously only asked
+for.
+
+### 25.1 Refresh-token theft response — the mitigation that never ran
+
+§6 specifies that presenting an already-rotated refresh token revokes the whole token
+family. `AuthService.refresh` did exactly that — and then raised. `get_db` rolls the
+request transaction back on any exception, so **the revocation was discarded every time**:
+the caller got a 401, and every token in the family kept working. The stolen-token
+mitigation existed on paper only, from Phase 1 until now.
+
+The family revocation is now committed before the error is raised. Committing inside a
+service is a deliberate exception to "the request owns the transaction", and it is
+narrow: nothing else is pending on the refresh path at that point.
+
+Rotation is also atomic now. `revoke` is a conditional `UPDATE … WHERE revoked_at IS NULL
+RETURNING id`, so of several requests presenting one token exactly one wins and the rest
+are treated as reuse. Previously all of them read `revoked_at is None` and all minted
+tokens — the property rotation exists to provide, absent under concurrency.
+
+### 25.2 Single-flight refresh on iOS
+
+With §25.1 fixed, a client bug became severe: `authorizedRequest` had no coalescing, so
+two screens hitting 401 together each presented the same stored token. The first rotated;
+the second was reuse; the server correctly destroyed the session. The user was logged out
+for opening two tabs of their own app.
+
+`SessionManager` now shares one in-flight refresh task among all callers. Being
+`@MainActor`, the check-and-assign cannot interleave. `clearSession` cancels any refresh
+in flight, so a rotation completing after logout cannot write a fresh token back into the
+Keychain that logout just cleared.
+
+### 25.3 Scheduled jobs
+
+Two operations were correct but only ever ran lazily, on a request that happened to touch
+the right row.
+
+- **Deadline sweep** (`app/workers/deadline_sweep.py`). §20.5 requires deadline-driven
+  resolution. Lazily, a participant who simply stopped opening FITWAR would never accrue
+  the misses that produce a warning or an elimination — the failure rule depended on the
+  victim showing up to be eliminated. The sweep calls the same Phase 5 code path; it
+  decides *when* to ask, never what the answer is.
+- **Media retention** (`app/workers/media_cleanup.py`) existed and was documented as
+  "run periodically" with nothing running it.
+
+`app/workers/scheduler.py` runs both on configurable intervals as a separate container
+(§35). It is not a singleton and does not need to be: both jobs are idempotent and
+concurrency-safe through the same UNIQUE constraints the request path relies on, which is
+asserted directly in `test_system_concurrency.py`. A platform with a native scheduler can
+invoke `python -m app.workers.<job>` and set `SCHEDULER_DISABLED_JOBS` instead — which is
+why the workers remain independently runnable.
+
+### 25.4 Retention could silently stop working
+
+`ObjectStorage.delete` swallowed every `ClientError` and returned `None`; `run_cleanup`
+then marked the row `EXPIRED` with `object_deleted_at` regardless. A failed delete was
+recorded as a successful one, so the bytes stayed in the bucket forever behind metadata
+claiming they were gone — and nothing retried them, despite the docstring promising
+exactly that. `BotoCoreError` (an unreachable endpoint) was not caught at all and aborted
+the whole sweep on the first bad object.
+
+`delete` now returns whether storage confirmed the removal, only confirmed deletes update
+the row, one failure does not abort the batch, and a non-zero failure count is logged as a
+warning so a stalled retention pipeline is visible.
+
+### 25.5 Boot-time production guards
+
+Configuration that is correct locally and unacceptable in production is now refused at
+startup rather than trusted to a code review:
+
+| Guard | Why it is a real failure, not a preference |
+|---|---|
+| `APP_DEBUG` off | Debug mode makes Starlette render a full traceback **to the client**, *instead of* the registered handler — so the Problem Details envelope never runs. Reproduced live: a 40-digit `target_value` returned file paths, library versions and source context. |
+| `AUTH_JWT_SECRET` ≥ 32 chars, not a placeholder | A known secret is a complete authentication bypass — anyone can mint an access token for any user id. |
+| No wildcard CORS | `"*"` with credentials is rejected by browsers anyway, so it silently disables CORS rather than doing what was intended. |
+| Rate limiting on, fail-closed | Otherwise an attacker who can degrade Redis also switches off brute-force protection (§7). |
+
+`LoggingEmailSender` — the no-provider fallback that writes raw password-reset tokens to
+the log so a developer can complete the flow locally — now refuses to construct in
+production for the same reason. `AuthService` defaults to it, so a deployment that simply
+never configured a provider would have leaked reset tokens into its log stream.
+
+### 25.6 Two unhandled exceptions reachable from a request body
+
+Both returned 500 with a stack trace attached (§25.5):
+
+- `target_value` had no `max_digits`, so a 40-digit value reached `Decimal.quantize()`
+  against a `NUMERIC(12,2)` column and raised `InvalidOperation`. The battle and evidence
+  schemas already carried the bound; the challenge schema was the odd one out. Fixed on
+  both create and edit.
+- `start_at` had no timezone validator, so a naive timestamp was compared against an aware
+  `now` and raised `TypeError`. `HealthEvidenceRequest` already applied exactly this rule
+  to its own timestamps.
+
+### 25.7 Participant limit was advisory
+
+`participant_limit` was enforced by counting and then inserting, with no lock. Sequentially
+correct; under concurrency a challenge capped at two admitted five. A capacity limit is not
+expressible as a table constraint, so joins now serialize on the challenge row
+(`ChallengeRepository.lock`, with `populate_existing` per §24.11).
+
+### 25.8 One N+1
+
+`GET /groups/{id}/members` called `active_challenge_ids_for_group_member` once per member:
+9 SQL statements for 3 members, 31 for 25. Replaced with one grouped query; the roster is
+now flat at 6 statements regardless of squad size, and a regression test asserts the
+*scaling* rather than an absolute count. Every other read endpoint measured flat.
+
+### 25.9 Client resilience to server-added values
+
+`XPReason` was a strict `String` enum. When Phase 7 added `battle_win`, one unrecognised
+ledger row failed the whole `/me/xp` response — so **every user who won a battle had a
+completely broken XP screen**. It now falls back to a neutral row for unknown values, the
+principle `RealtimeEvent.parse` already applied to socket events. `GameMode` gained the
+decode-only `1v1` case for the same reason, with the create flow driven by an explicit
+`selectable` list so the picker never offers a mode the server rejects.
+
+### 25.10 Test-suite false confidence
+
+Four iOS tests were failing at commit `6b00a56` while Phase 7 reported them passing: the
+report came from `xcodebuild test-without-building`, which silently ran a stale bundle.
+One fixture rewrote every `"status": "active"` including both battle sides', and three
+realtime tests built a signed-out `SessionManager` whose missing access token made
+`connectRealtime()` return before opening anything — so the assertions were checking
+nothing. All four are fixed and the CI-facing command is now `xcodebuild test`, which
+rebuilds.

@@ -156,22 +156,20 @@ async def list_members(
 ) -> list[GroupMemberResponse]:
     participants = ChallengeParticipantRepository(session)
     roster = await groups.roster(context.group.id)
-    result: list[GroupMemberResponse] = []
-    for member, display_name in roster:
-        active_ids = await participants.active_challenge_ids_for_group_member(
-            context.group.id, member.user_id
+    # One grouped query for the whole roster, not one per member: the previous version
+    # was an N+1 that grew linearly with squad size.
+    counts = await participants.active_challenge_counts_for_group(context.group.id)
+    return [
+        GroupMemberResponse(
+            user_id=member.user_id,
+            display_name=display_name,
+            role=member.role,
+            status=member.status,
+            joined_at=member.joined_at,
+            active_challenge_count=counts.get(member.user_id, 0),
         )
-        result.append(
-            GroupMemberResponse(
-                user_id=member.user_id,
-                display_name=display_name,
-                role=member.role,
-                status=member.status,
-                joined_at=member.joined_at,
-                active_challenge_count=len(active_ids),
-            )
-        )
-    return result
+        for member, display_name in roster
+    ]
 
 
 @router.patch("/{group_id}/members/{user_id}", response_model=GroupMemberResponse)

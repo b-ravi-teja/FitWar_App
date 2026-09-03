@@ -54,13 +54,29 @@ enum ActivityType: String, Codable, Sendable, Equatable, CaseIterable {
 enum GameMode: String, Codable, Sendable, Equatable, CaseIterable {
     case survival
     case points
+    /// A battle's backing challenge. The server never surfaces one through the challenge
+    /// API (Architecture §24.2), so this is decode-only — but it exists because a strict
+    /// enum turns one leaked value into a whole list that fails to load rather than one
+    /// row that looks odd.
+    case oneVOne = "1v1"
 
-    var displayName: String { rawValue.uppercased() }
+    /// The modes the create flow may offer. Not `allCases`: a 1v1 is started from the
+    /// Battles tab, and `POST /groups/{id}/challenges` rejects it — offering it here
+    /// would be a button the server refuses.
+    static let selectable: [GameMode] = [.survival, .points]
+
+    var displayName: String {
+        switch self {
+        case .survival, .points: rawValue.uppercased()
+        case .oneVOne: "1V1"
+        }
+    }
 
     var tag: String {
         switch self {
         case .survival: "MOST PLAYED"
         case .points: "FRIENDLY"
+        case .oneVOne: "HEAD TO HEAD"
         }
     }
 
@@ -68,6 +84,7 @@ enum GameMode: String, Codable, Sendable, Equatable, CaseIterable {
         switch self {
         case .survival: "Hit the daily target or take a strike. Two strikes and you're out."
         case .points: "Everyone keeps playing. Highest total at the end takes the crown."
+        case .oneVOne: "One opponent. Highest total when the clock runs out wins."
         }
     }
 }

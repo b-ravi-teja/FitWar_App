@@ -220,3 +220,77 @@ struct LeaderboardPresentationTests {
         #expect(label == "LEFT")
     }
 }
+
+// MARK: - Phase 8 hardening regressions
+
+@MainActor
+struct XPReasonForwardCompatibilityTests {
+    private func decodeSummary(_ reason: String) throws -> XPSummary {
+        let json = """
+        {"xp_total": 150, "level": 1, "xp_into_level": 150, "xp_to_next_level": 350,
+         "transactions": [
+           {"id": "11111111-1111-1111-1111-111111111111", "amount": 100,
+            "reason": "\(reason)", "created_at": "2026-09-03T10:00:00Z"}
+         ]}
+        """
+        return try JSONCoding.decoder.decode(XPSummary.self, from: Data(json.utf8))
+    }
+
+    @Test func decodesTheBattleWinReasonPhase7Added() throws {
+        /// The regression: the server started emitting `battle_win` and this enum did
+        /// not know it, so every battle winner's XP screen failed to decode entirely.
+        let summary = try decodeSummary("battle_win")
+
+        #expect(summary.transactions[0].reason == .battleWin)
+        #expect(summary.transactions[0].reason.displayName == "Battle win")
+    }
+
+    @Test func anUnrecognisedReasonDegradesToOneNeutralRow() throws {
+        /// A future server value must cost one odd-looking row, never the whole screen.
+        let summary = try decodeSummary("achievement_unlocked")
+
+        #expect(summary.transactions[0].reason == .unknown)
+        #expect(summary.transactions[0].amount == 100)
+        #expect(summary.xpTotal == 150)
+    }
+
+    @Test func theKnownReasonsStillDecodeExactly() throws {
+        #expect(try decodeSummary("daily_completion").transactions[0].reason == .dailyCompletion)
+        #expect(try decodeSummary("streak_bonus").transactions[0].reason == .streakBonus)
+    }
+
+    @Test func everyReasonHasNonEmptyCopy() {
+        for reason in [XPReason.dailyCompletion, .streakBonus, .battleWin, .unknown] {
+            #expect(!reason.displayName.isEmpty)
+        }
+    }
+}
+
+@MainActor
+struct GameModeDecodingTests {
+    @Test func decodesTheBackingOneVOneModeWithoutFailingTheList() throws {
+        /// 1v1 challenges are hidden from the challenge API, but a strict enum turns any
+        /// leak into a whole list that will not load.
+        let json = #"{"game_mode": "1v1"}"#
+        struct Wrapper: Decodable { let gameMode: GameMode }
+
+        let decoded = try JSONCoding.decoder.decode(Wrapper.self, from: Data(json.utf8))
+
+        #expect(decoded.gameMode == .oneVOne)
+    }
+
+    @Test func theCreateFlowNeverOffers1v1() {
+        /// `POST /groups/{id}/challenges` rejects it — a picker entry the server refuses
+        /// is worse than one that isn't there.
+        #expect(!GameMode.selectable.contains(.oneVOne))
+        #expect(GameMode.selectable == [.survival, .points])
+    }
+
+    @Test func everyModeHasCopyForAllThreeSurfaces() {
+        for mode in GameMode.allCases {
+            #expect(!mode.displayName.isEmpty)
+            #expect(!mode.tag.isEmpty)
+            #expect(!mode.blurb.isEmpty)
+        }
+    }
+}

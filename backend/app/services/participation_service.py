@@ -38,6 +38,7 @@ from app.models.challenge import (
 )
 from app.repositories.challenges import (
     ChallengeParticipantRepository,
+    ChallengeRepository,
     DailyProgressRepository,
 )
 from app.repositories.groups import GroupMemberRepository
@@ -45,6 +46,7 @@ from app.repositories.groups import GroupMemberRepository
 
 class ParticipationService:
     def __init__(self, session: AsyncSession) -> None:
+        self._challenges = ChallengeRepository(session)
         self._participants = ChallengeParticipantRepository(session)
         self._progress = DailyProgressRepository(session)
         self._members = GroupMemberRepository(session)
@@ -67,6 +69,13 @@ class ParticipationService:
     ) -> ChallengeParticipant:
         if await self._members.get_active(challenge.group_id, user_id) is None:
             raise NotAGroupMemberError("Join the group before joining its challenges.")
+
+        # Serialize joins to this challenge. Everything below is a read-then-write
+        # against shared state — the participant limit especially — and concurrent
+        # joiners would otherwise all observe the same pre-insert count and all be
+        # admitted. `UNIQUE(challenge_id, user_id)` still covers the duplicate-self case;
+        # this covers the capacity case, which no constraint can express.
+        await self._challenges.lock(challenge.id)
 
         if challenge.status in (ChallengeStatus.COMPLETED, ChallengeStatus.CANCELLED):
             raise ChallengeAlreadyEndedError("This challenge is over.")

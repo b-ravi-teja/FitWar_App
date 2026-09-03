@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.challenge import (
     ActivityType,
@@ -25,7 +25,11 @@ class CreateChallengeRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=80)
     activity_type: ActivityType
-    target_value: Decimal = Field(gt=0)
+    # Bounded to the column's own NUMERIC(12,2). Without `max_digits` an oversized
+    # value reaches `Decimal.quantize()` in the service and raises InvalidOperation —
+    # a 500 for what is plainly a client error. The battle and evidence schemas already
+    # carry this bound; this one was the odd one out.
+    target_value: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     unit: str = Field(min_length=1, max_length=24)
     game_mode: GameMode
     verification_method: VerificationMethod
@@ -33,10 +37,25 @@ class CreateChallengeRequest(BaseModel):
     participant_limit: int | None = Field(default=None, ge=2)
     start_at: datetime | None = None
 
+    @field_validator("start_at")
+    @classmethod
+    def _require_timezone(cls, value: datetime | None) -> datetime | None:
+        """A naive timestamp has no defined instant.
+
+        The service compares `start_at` against an aware `now`, so a naive value raises
+        TypeError deep in the call and surfaces as a 500. Rejecting it here is both the
+        correct status and the same rule `HealthEvidenceRequest` already applies to its
+        own timestamps — guessing an offset would be exactly the device-local assumption
+        Architecture §11 forbids.
+        """
+        if value is not None and value.tzinfo is None:
+            raise ValueError("must include a UTC offset")
+        return value
+
 
 class UpdateChallengeRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
-    target_value: Decimal | None = Field(default=None, gt=0)
+    target_value: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
 
 
 class ChallengeParticipantResponse(BaseModel):

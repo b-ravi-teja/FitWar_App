@@ -391,7 +391,11 @@ struct ChallengeModelTests {
     }
 
     @Test func onlyTheTwoBuiltGameModesAreSelectable() {
-        #expect(GameMode.allCases.map(\.rawValue) == ["survival", "points"])
+        /// `allCases` also carries `.oneVOne`, which exists purely so a leaked 1v1
+        /// challenge decodes as one odd row instead of failing a whole list. What the
+        /// create flow may *offer* is `selectable`, and that is what this asserts.
+        #expect(GameMode.selectable.map(\.rawValue) == ["survival", "points"])
+        #expect(!GameMode.selectable.contains(.oneVOne))
         #expect(ComingSoonMode.allCases.count == 3)
     }
 }

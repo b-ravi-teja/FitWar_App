@@ -61,6 +61,16 @@ class StorageSettings(BaseSettings):
     secret_access_key: SecretStr
 
 
+# Environments that must not run with development affordances enabled.
+PRODUCTION_ENVS = frozenset({"production", "prod", "staging"})
+
+# Placeholder secrets that ship in `.env.example`. Present in a production environment
+# they mean nobody generated a real one — and a known JWT secret is a full
+# authentication bypass, since anyone can mint an access token for any user id.
+_PLACEHOLDER_SECRET_MARKERS = ("change-me", "changeme", "local-dev", "example", "placeholder")
+MIN_JWT_SECRET_LENGTH = 32
+
+
 class ApplicationSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="APP_", env_file=".env.local", extra="ignore")
 
@@ -68,6 +78,10 @@ class ApplicationSettings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     cors_origins: list[str] = Field(default_factory=list)
+
+    @property
+    def is_production(self) -> bool:
+        return self.env.strip().lower() in PRODUCTION_ENVS
 
 
 class RateLimitSettings(BaseSettings):
@@ -140,6 +154,37 @@ class MediaSettings(BaseSettings):
     abandoned_upload_ttl_hours: int = 6
 
 
+class UnsafeProductionConfigError(RuntimeError):
+    """A configuration that is fine locally and unacceptable in production.
+
+    Raised at construction, so the process refuses to start rather than serving
+    traffic in a state nobody would have chosen deliberately.
+    """
+
+
+class SchedulerSettings(BaseSettings):
+    """Periodic background jobs (Architecture §35).
+
+    Intervals are environment-configurable so a deployment can tune them without a code
+    change, and `disabled_jobs` exists so a platform that schedules the same work
+    natively (a Kubernetes CronJob, an ECS scheduled task) can turn off the in-process
+    runner without deleting it.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="SCHEDULER_", env_file=".env.local", extra="ignore"
+    )
+
+    # Deadlines are per-challenge-day boundaries, so resolving every few minutes is far
+    # finer than the rule needs while keeping "you were eliminated" close to the moment
+    # it became true.
+    deadline_sweep_interval_seconds: int = 300
+    # Retention is measured in hours (§33), so hourly is ample and keeps storage calls
+    # rare.
+    media_cleanup_interval_seconds: int = 3600
+    disabled_jobs: set[str] = Field(default_factory=set)
+
+
 class Settings:
     """Single composition root. Construct once via `get_settings()`."""
 
@@ -151,6 +196,62 @@ class Settings:
         self.media = MediaSettings()
         self.app = ApplicationSettings()
         self.rate_limit = RateLimitSettings()
+        self.scheduler = SchedulerSettings()
+        self._assert_safe_for_environment()
+
+    def _assert_safe_for_environment(self) -> None:
+        """Fail fast on development defaults that are dangerous in production.
+
+        Each of these is a real failure mode rather than a policy preference:
+
+        - `debug=True` makes Starlette's ServerErrorMiddleware render a full traceback
+          to the *client* on any unhandled exception — and it does so instead of the
+          registered handler, so the Problem Details envelope never runs. That leaks
+          file paths, library versions and code context to anyone who can trigger a 500.
+        - A placeholder or short `AUTH_JWT_SECRET` means access tokens can be forged for
+          any user id: complete authentication bypass, not a hardening nicety.
+        - `allow_origins=["*"]` with `allow_credentials=True` is rejected by browsers
+          anyway, so it is never what was intended; it silently disables CORS instead.
+        - Fail-open rate limiting means an attacker who can degrade Redis also switches
+          off brute-force protection (§7).
+        """
+        if not self.app.is_production:
+            return
+
+        problems: list[str] = []
+        if self.app.debug:
+            problems.append(
+                "APP_DEBUG must be false outside local development — debug mode returns "
+                "stack traces to clients."
+            )
+
+        secret = self.auth.jwt_secret.get_secret_value()
+        if len(secret) < MIN_JWT_SECRET_LENGTH:
+            problems.append(
+                f"AUTH_JWT_SECRET must be at least {MIN_JWT_SECRET_LENGTH} characters."
+            )
+        if any(marker in secret.lower() for marker in _PLACEHOLDER_SECRET_MARKERS):
+            problems.append(
+                "AUTH_JWT_SECRET still looks like the example placeholder — generate one "
+                "with `openssl rand -hex 32`."
+            )
+
+        if "*" in self.app.cors_origins:
+            problems.append(
+                "APP_CORS_ORIGINS must list real origins; '*' with credentials is invalid."
+            )
+
+        if self.rate_limit.enabled and self.rate_limit.fail_open:
+            problems.append(
+                "RATE_LIMIT_FAIL_OPEN must be false in production — see Architecture §7."
+            )
+        if not self.rate_limit.enabled:
+            problems.append("RATE_LIMIT_ENABLED must be true in production.")
+
+        if problems:
+            raise UnsafeProductionConfigError(
+                f"Unsafe configuration for APP_ENV={self.app.env!r}: " + " ".join(problems)
+            )
 
 
 @lru_cache

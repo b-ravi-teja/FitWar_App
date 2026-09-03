@@ -116,12 +116,44 @@ final class SessionManager {
         }
     }
 
+    /// The single in-flight refresh, if one is running. Every concurrent caller awaits
+    /// this same task rather than starting its own.
+    private var refreshTask: Task<Void, Error>?
+
+    /// Refresh the token pair, coalescing concurrent attempts into one network call.
+    ///
+    /// This must be single-flight, and the reason is not efficiency. Refresh tokens
+    /// rotate and the server treats a second presentation of an already-rotated token as
+    /// theft: it revokes the **entire token family**. Two screens hitting 401 at the same
+    /// moment would each read the same stored token and each POST it — the first rotates
+    /// successfully, the second is reuse, and the server correctly destroys the session.
+    /// The user is silently logged out for doing nothing worse than opening two tabs of
+    /// their own app.
+    ///
+    /// Coalescing here means one presentation per rotation no matter how many callers
+    /// race. Because this type is `@MainActor`, the check-and-assign below cannot
+    /// interleave — there is no window between reading `refreshTask` and setting it.
     private func refreshTokens() async throws {
-        guard let refreshToken = try keychain.read(KeychainKey.refreshToken) else {
-            throw APIError.server(status: 401, code: "REFRESH_INVALID", detail: "No refresh token stored.")
+        if let existing = refreshTask {
+            // Someone else is already rotating. Wait for their result and use the token
+            // they stored; starting a second rotation is what triggers the revocation.
+            try await existing.value
+            return
         }
-        let tokens = try await authService.refresh(refreshToken: refreshToken)
-        try applyTokens(tokens.accessToken, tokens.refreshToken)
+
+        let task = Task<Void, Error> { [weak self] in
+            guard let self else { return }
+            guard let refreshToken = try self.keychain.read(KeychainKey.refreshToken) else {
+                throw APIError.server(
+                    status: 401, code: "REFRESH_INVALID", detail: "No refresh token stored."
+                )
+            }
+            let tokens = try await self.authService.refresh(refreshToken: refreshToken)
+            try self.applyTokens(tokens.accessToken, tokens.refreshToken)
+        }
+        refreshTask = task
+        defer { refreshTask = nil }
+        try await task.value
     }
 
     private func applyTokens(_ access: String, _ refresh: String) throws {
@@ -134,6 +166,11 @@ final class SessionManager {
     }
 
     private func clearSession(newState: SessionState) async {
+        // Cancel first: a refresh still in flight would otherwise finish afterwards and
+        // write a freshly rotated token straight back into the Keychain this just
+        // cleared, resurrecting a session the user ended.
+        refreshTask?.cancel()
+        refreshTask = nil
         accessToken = nil
         try? keychain.delete(KeychainKey.refreshToken)
         state = newState

@@ -6,7 +6,7 @@ coverage, because they're pure orchestration logic and should run in millisecond
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -70,8 +70,13 @@ class FakeRefreshTokenRepository:
     async def get_by_hash(self, token_hash: str) -> RefreshToken | None:
         return self.by_hash.get(token_hash)
 
-    async def revoke(self, token: RefreshToken) -> None:
+    async def revoke(self, token: RefreshToken) -> bool:
+        """Mirrors the real conditional UPDATE: only the caller that actually flips
+        `revoked_at` reports True, so a second rotation of the same token is refused."""
+        if token.revoked_at is not None:
+            return False
         token.revoked_at = datetime.now(UTC)
+        return True
 
     async def revoke_family(self, family_id: uuid.UUID) -> None:
         for token in self.by_hash.values():
@@ -103,9 +108,25 @@ class FakeEmailSender:
         self.sent.append((to, token))
 
 
+class FakeSession:
+    """Just enough session for `AuthService`.
+
+    `commit` matters: reuse detection revokes the token family and commits it *before*
+    raising, because the request transaction is rolled back on the way out and the
+    revocation would otherwise be discarded (the P0 this suite now covers).
+    """
+
+    def __init__(self) -> None:
+        self.commits = 0
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+
 @pytest.fixture
 def auth_service() -> AuthService:
     service = AuthService.__new__(AuthService)  # bypass __init__ (no real session)
+    service._session = cast(Any, FakeSession())
     service._users = FakeUserRepository()
     service._refresh_tokens = FakeRefreshTokenRepository()
     service._reset_tokens = FakePasswordResetTokenRepository()
@@ -287,3 +308,44 @@ async def test_confirm_password_reset_token_is_single_use(auth_service: AuthServ
 async def test_confirm_password_reset_unrecognized_token_raises(auth_service: AuthService) -> None:
     with pytest.raises(ResetTokenInvalidError):
         await auth_service.confirm_password_reset(token="never-issued", new_password="newpassword1")
+
+
+async def test_reuse_detection_commits_the_family_revocation(
+    auth_service: AuthService,
+) -> None:
+    """P0 regression: the revocation used to be rolled back with the request.
+
+    `AuthService.refresh` revoked the family and then raised; the request's transaction
+    is rolled back on any exception, so the theft response never persisted. The commit
+    is the fix, and this asserts it happens rather than only that the error is raised.
+    """
+    _, tokens = await auth_service.register(
+        email="reuse@example.com", password="hunter22", display_name="R"
+    )
+    rotated = await auth_service.refresh(raw_refresh_token=tokens.refresh_token)
+
+    with pytest.raises(RefreshTokenReuseDetectedError):
+        await auth_service.refresh(raw_refresh_token=tokens.refresh_token)
+
+    session = cast(Any, auth_service)._session
+    assert session.commits >= 1, "family revocation was not committed before raising"
+    # And the legitimate holder's current token is dead too — the point of a family.
+    with pytest.raises(RefreshTokenReuseDetectedError):
+        await auth_service.refresh(raw_refresh_token=rotated.refresh_token)
+
+
+async def test_a_token_cannot_be_rotated_twice_even_without_a_prior_revocation(
+    auth_service: AuthService,
+) -> None:
+    """Rotation is decided by the conditional UPDATE, not by the earlier read.
+
+    Simulates the concurrent case: two callers both pass the `revoked_at is None` check,
+    and only the one whose UPDATE actually matched is allowed to mint tokens.
+    """
+    _, tokens = await auth_service.register(
+        email="atomic@example.com", password="hunter22", display_name="A"
+    )
+    await auth_service.refresh(raw_refresh_token=tokens.refresh_token)
+
+    with pytest.raises(RefreshTokenReuseDetectedError):
+        await auth_service.refresh(raw_refresh_token=tokens.refresh_token)

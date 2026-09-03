@@ -25,8 +25,20 @@ final class MockAuthService: AuthServiceProtocol, @unchecked Sendable {
         try registerResult.get()
     }
 
+    /// Tokens actually presented to `/auth/refresh`, in order. The refresh-coalescing
+    /// tests assert on these: presenting the *same* token twice is what makes a real
+    /// server revoke the whole family.
+    private(set) var presentedRefreshTokens: [String] = []
+    /// Seconds to stall inside refresh, so a test can hold one in flight while others
+    /// pile up behind it.
+    var refreshDelay: Duration = .zero
+
     func refresh(refreshToken: String) async throws -> TokenResponseDTO {
         refreshCallCount += 1
+        presentedRefreshTokens.append(refreshToken)
+        if refreshDelay != .zero {
+            try? await Task.sleep(for: refreshDelay)
+        }
         return try refreshResult.get()
     }
 

@@ -27,9 +27,24 @@ class RefreshTokenRepository:
         )
         return result.scalar_one_or_none()
 
-    async def revoke(self, token: RefreshToken) -> None:
-        token.revoked_at = datetime.now(UTC)
+    async def revoke(self, token: RefreshToken) -> bool:
+        """Revoke one token. Returns whether *this* call is the one that revoked it.
+
+        A conditional UPDATE rather than an attribute assignment, so rotation is atomic:
+        two requests presenting the same token race on `revoked_at IS NULL` and exactly
+        one wins. The loser learns it lost from the row count and is treated as reuse —
+        without this, both could read `revoked_at is None`, both pass the check, and
+        both mint a token from one presentation, which is precisely the property
+        rotation exists to prevent.
+        """
+        result = await self._session.execute(
+            update(RefreshToken)
+            .where(RefreshToken.id == token.id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(UTC))
+            .returning(RefreshToken.id)
+        )
         await self._session.flush()
+        return result.scalar_one_or_none() is not None
 
     async def revoke_family(self, family_id: uuid.UUID) -> None:
         """Reuse-detection response: revoke every token in the family (Architecture §6)."""

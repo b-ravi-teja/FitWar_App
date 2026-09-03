@@ -3,6 +3,31 @@ import Testing
 
 @testable import FITWAR
 
+/// A session manager holding a real access token, as the app does whenever a battle
+/// screen is on screen.
+@MainActor
+private func makeAuthenticatedSession() async -> SessionManager {
+    let auth = MockAuthService()
+    let keychain = MockKeychainStore()
+    let manager = SessionManager(
+        authService: auth,
+        keychain: keychain,
+        apiClient: APIClient(baseURL: URL(string: "https://example.com")!)
+    )
+    auth.loginResult = .success(
+        AuthenticatedSession(
+            userId: BattleFixtures.myId,
+            accessToken: TestJWT.make(subject: BattleFixtures.myId),
+            refreshToken: "refresh",
+            expiresIn: 900
+        )
+    )
+    // Actually sign in — merely configuring the mock leaves `accessToken` nil, and
+    // `connectRealtime()` returns early without a token.
+    try? await manager.login(email: "me@example.com", password: "hunter2222")
+    return manager
+}
+
 @MainActor
 private func makeSession() -> SessionManager {
     SessionManager(
@@ -71,22 +96,47 @@ struct BattleDecodingTests {
         #expect(battle.isFinalized == false)
     }
 
-    @Test func decodesTheFinalizedShapeIncludingTheLedgerAward() throws {
-        let json = live
-            .replacingOccurrences(of: "\"status\": \"active\"", with: "\"status\": \"completed\"")
-            .replacingOccurrences(of: "\"winner_user_id\": null",
-                                  with: "\"winner_user_id\": \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\"")
-            .replacingOccurrences(of: "\"my_outcome\": null", with: "\"my_outcome\": \"won\"")
-            .replacingOccurrences(of: "\"my_xp_awarded\": null", with: "\"my_xp_awarded\": 100")
-            .replacingOccurrences(of: "\"completed_at\": null",
-                                  with: "\"completed_at\": \"2026-09-08T18:31:00Z\"")
+    /// A finished battle exactly as the server sends it. Written out in full rather than
+    /// string-substituted from `live`: the previous version replaced *every*
+    /// `"status": "active"`, including both sides', producing a `BattleSideStatus` value
+    /// the enum correctly has no case for — so the test failed on its own fixture rather
+    /// than on the behaviour it meant to check.
+    private let finalized = """
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "group_id": "33333333-3333-3333-3333-333333333333",
+      "status": "completed",
+      "activity_type": "steps",
+      "target_value": "10000.00",
+      "unit": "steps",
+      "day_index": 7,
+      "duration_days": 7,
+      "timezone": "Asia/Kolkata",
+      "start_at": "2026-09-01T18:30:00Z",
+      "end_at": "2026-09-08T18:30:00Z",
+      "completed_at": "2026-09-08T18:31:00Z",
+      "time_remaining_seconds": 0,
+      "sides": [
+        {"user_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "display_name": "Me",
+         "status": "won", "score": "24000.00", "days_completed": 7, "is_me": true},
+        {"user_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "display_name": "Rival",
+         "status": "lost", "score": "12000.00", "days_completed": 5, "is_me": false}
+      ],
+      "winner_user_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "my_outcome": "won",
+      "my_xp_awarded": 100
+    }
+    """
 
-        let battle = try decode(json)
+    @Test func decodesTheFinalizedShapeIncludingTheLedgerAward() throws {
+        let battle = try decode(finalized)
 
         #expect(battle.myOutcome == .won)
         #expect(battle.myXPAwarded == 100)
         #expect(battle.completedAt != nil)
         #expect(battle.isFinalized)
+        #expect(battle.me?.status == .won)
+        #expect(battle.opponent?.status == .lost)
     }
 
     @Test func theVersusSplitIsPresentationOnly() throws {
@@ -239,7 +289,7 @@ struct BattlesListViewModelTests {
 
 @MainActor
 struct BattleDetailViewModelTests {
-    private func makeSUT() -> (
+    private func makeSUT() async -> (
         BattleDetailViewModel, MockBattlesService, MockHealthKitService, MockRealtimeClient
     ) {
         let battles = MockBattlesService()
@@ -250,7 +300,11 @@ struct BattleDetailViewModelTests {
             battles: battles,
             health: health,
             realtime: realtime,
-            sessionManager: makeSession()
+            // An *authenticated* session: `connectRealtime()` needs an access token for
+            // the socket handshake, and a signed-out session manager makes it return
+            // before opening anything — which silently turned the realtime assertions
+            // below into no-ops.
+            sessionManager: await makeAuthenticatedSession()
         )
         return (sut, battles, health, realtime)
     }
@@ -258,7 +312,7 @@ struct BattleDetailViewModelTests {
     // ---- Phase mapping
 
     @Test func anInvitationToMeIsDistinctFromOneIAmWaitingOn() async {
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(status: .pending, myStatus: .invited)
         )
@@ -279,7 +333,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func todaysDayIsDoneOnlyWhenBankedDaysReachTheCurrentDay() async {
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(status: .active, myDays: 1, dayIndex: 2)
         )
@@ -297,7 +351,7 @@ struct BattleDetailViewModelTests {
         /// The decisive test for §22. The caller's score is *lower*, and the server says
         /// they won — the screen must render Victory. A client that compared scores
         /// would disagree with the ledger that paid out.
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(
                 status: .completed,
@@ -320,7 +374,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func defeatAlsoComesFromTheServerEvenWithTheHigherScoreInHand() async {
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(
                 status: .completed,
@@ -343,7 +397,7 @@ struct BattleDetailViewModelTests {
 
     @Test func aCompletedBattleWithNoOutcomeNeverGuessesAWinner() async {
         /// Rather than inventing a verdict from the scores it happens to hold.
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(status: .completed, myScore: 9_999, theirScore: 1, myOutcome: nil)
         )
@@ -357,7 +411,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func aCancelledBattleIsItsOwnState() async {
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(status: .cancelled, myStatus: .declined)
         )
@@ -373,7 +427,7 @@ struct BattleDetailViewModelTests {
     // ---- Actions
 
     @Test func acceptingAppliesTheServersReply() async {
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(status: .pending, myStatus: .invited)
         )
@@ -390,7 +444,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func decliningAppliesTheServersReply() async {
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(status: .pending, myStatus: .invited)
         )
@@ -412,7 +466,7 @@ struct BattleDetailViewModelTests {
     @Test func evidenceIsReadOverTheServersWindowNotTheDeviceDay() async {
         /// The battle day belongs to the battle's frozen timezone (§11), which is
         /// frequently not the device's.
-        let (sut, battles, health, _) = makeSUT()
+        let (sut, battles, health, _) = await makeSUT()
         let battle = BattleFixtures.battle(status: .active)
         battles.detailResult = .success(battle)
         health.evidenceResult = .success(VerificationFixtures.evidence())
@@ -429,7 +483,7 @@ struct BattleDetailViewModelTests {
 
     @Test func theSubmissionCarriesEvidenceAndNothingElse() async {
         /// No score, no winner, no XP — the request type has no field for any of them.
-        let (sut, battles, health, _) = makeSUT()
+        let (sut, battles, health, _) = await makeSUT()
         let battle = BattleFixtures.battle(status: .active)
         battles.detailResult = .success(battle)
         health.evidenceResult = .success(VerificationFixtures.evidence(value: "12000"))
@@ -447,7 +501,7 @@ struct BattleDetailViewModelTests {
 
     @Test func aSubmissionThatEndsTheBattleRendersTheResultImmediately() async {
         /// The reply carries the finalized battle, so no extra round trip is needed.
-        let (sut, battles, health, _) = makeSUT()
+        let (sut, battles, health, _) = await makeSUT()
         battles.detailResult = .success(BattleFixtures.battle(status: .active))
         health.evidenceResult = .success(VerificationFixtures.evidence())
         battles.submitResult = .success(
@@ -473,7 +527,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func lateEvidenceIsReportedAsARefusalNotSilentlySwallowed() async {
-        let (sut, battles, health, _) = makeSUT()
+        let (sut, battles, health, _) = await makeSUT()
         battles.detailResult = .success(BattleFixtures.battle(status: .active))
         health.evidenceResult = .success(VerificationFixtures.evidence())
         battles.submitResult = .failure(
@@ -487,7 +541,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func aHealthKitFailureNeverLeaksFrameworkText() async {
-        let (sut, battles, health, _) = makeSUT()
+        let (sut, battles, health, _) = await makeSUT()
         battles.detailResult = .success(BattleFixtures.battle(status: .active))
         health.evidenceResult = .failure(HealthKitError.queryFailed)
         await sut.load()
@@ -502,7 +556,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func evidenceIsNeverSubmittedForAPendingBattle() async {
-        let (sut, battles, health, _) = makeSUT()
+        let (sut, battles, health, _) = await makeSUT()
         battles.detailResult = .success(
             BattleFixtures.battle(status: .pending, myStatus: .invited)
         )
@@ -517,7 +571,7 @@ struct BattleDetailViewModelTests {
     // ---- Errors
 
     @Test func networkFailureAndServerErrorAreDistinctPhases() async {
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .failure(APIError.noConnection)
         await sut.load()
         #expect(sut.phase == .networkFailure)
@@ -533,7 +587,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func aBattleTheCallerCannotSeeIsAnError() async {
-        let (sut, battles, _, _) = makeSUT()
+        let (sut, battles, _, _) = await makeSUT()
         battles.detailResult = .failure(
             APIError.server(status: 404, code: "BATTLE_NOT_FOUND", detail: "gone")
         )
@@ -551,7 +605,7 @@ struct BattleDetailViewModelTests {
     @Test func aBattleEventTriggersARestReadRatherThanCarryingState() async {
         /// The payloads carry no scores by design; the only correct response is to
         /// re-read. This is also what makes a duplicated event harmless.
-        let (sut, battles, _, realtime) = makeSUT()
+        let (sut, battles, _, realtime) = await makeSUT()
         battles.detailResult = .success(BattleFixtures.battle(status: .active))
         realtime.eventsToEmit = [
             .battleChanged(battleId: UUID()),
@@ -569,7 +623,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func aCompletionEventStillGoesThroughRestForTheVerdict() async {
-        let (sut, battles, _, realtime) = makeSUT()
+        let (sut, battles, _, realtime) = await makeSUT()
         battles.detailResult = .success(BattleFixtures.battle(status: .active))
         await sut.load()
         battles.detailResult = .success(
@@ -598,7 +652,7 @@ struct BattleDetailViewModelTests {
 
     @Test func aDroppedSocketLeavesTheScreenWorkingOverRest() async {
         /// The mock's stream finishes immediately, which models the socket dropping.
-        let (sut, battles, _, realtime) = makeSUT()
+        let (sut, battles, _, realtime) = await makeSUT()
         battles.detailResult = .success(BattleFixtures.battle(status: .active))
         await sut.load()
 
@@ -616,7 +670,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func reconnectingDoesNotOpenASecondSocket() async {
-        let (sut, battles, _, realtime) = makeSUT()
+        let (sut, battles, _, realtime) = await makeSUT()
         battles.detailResult = .success(BattleFixtures.battle(status: .active))
         await sut.load()
 
@@ -628,7 +682,7 @@ struct BattleDetailViewModelTests {
     }
 
     @Test func disconnectingReleasesTheSocket() async {
-        let (sut, battles, _, realtime) = makeSUT()
+        let (sut, battles, _, realtime) = await makeSUT()
         battles.detailResult = .success(BattleFixtures.battle(status: .active))
         await sut.load()
         sut.connectRealtime()
@@ -705,7 +759,7 @@ struct CreateBattleViewModelTests {
     }
 
     @Test func loadsSquadsAndSelectsTheFirstOne() async {
-        let (sut, battles, groups) = makeSUT()
+        let (sut, battles, groups) = await makeSUT()
         let group = Fixture.groupSummary(name: "KITS")
         groups.listResult = .success([group])
         battles.rivalsResult = .success([BattleFixtures.rival()])
@@ -717,7 +771,7 @@ struct CreateBattleViewModelTests {
     }
 
     @Test func anEmptyTargetSendsNothingSoTheServerFillsInItsDefault() async {
-        let (sut, battles, groups) = makeSUT()
+        let (sut, battles, groups) = await makeSUT()
         groups.listResult = .success([Fixture.groupSummary()])
         battles.rivalsResult = .success([BattleFixtures.rival()])
         battles.createResult = .success(BattleFixtures.battle(status: .pending))
@@ -730,7 +784,7 @@ struct CreateBattleViewModelTests {
     }
 
     @Test func atypedTargetIsSentThrough() async {
-        let (sut, battles, groups) = makeSUT()
+        let (sut, battles, groups) = await makeSUT()
         groups.listResult = .success([Fixture.groupSummary()])
         battles.rivalsResult = .success([BattleFixtures.rival()])
         battles.createResult = .success(BattleFixtures.battle(status: .pending))
@@ -745,7 +799,7 @@ struct CreateBattleViewModelTests {
     }
 
     @Test func aDuplicateChallengeIsExplainedInProductCopy() async {
-        let (sut, battles, groups) = makeSUT()
+        let (sut, battles, groups) = await makeSUT()
         groups.listResult = .success([Fixture.groupSummary()])
         battles.rivalsResult = .success([BattleFixtures.rival()])
         battles.createResult = .failure(
@@ -762,7 +816,7 @@ struct CreateBattleViewModelTests {
     }
 
     @Test func aRivalAlreadyInABattleIsMarkedByTheServerNotInferredHere() async {
-        let (sut, battles, groups) = makeSUT()
+        let (sut, battles, groups) = await makeSUT()
         groups.listResult = .success([Fixture.groupSummary()])
         battles.rivalsResult = .success([BattleFixtures.rival(liveBattleId: UUID())])
 
@@ -772,7 +826,7 @@ struct CreateBattleViewModelTests {
     }
 
     @Test func headToHeadRecordsComeFromTheServer() async {
-        let (sut, battles, groups) = makeSUT()
+        let (sut, battles, groups) = await makeSUT()
         groups.listResult = .success([Fixture.groupSummary()])
         battles.rivalsResult = .success([BattleFixtures.rival(wins: 3, losses: 1)])
 

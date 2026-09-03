@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import boto3
 from botocore.client import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -78,13 +78,21 @@ class S3ObjectStorage:
             return None
         return int(response["ContentLength"]), str(response.get("ContentType", ""))
 
-    def delete(self, *, key: str) -> None:
+    def delete(self, *, key: str) -> bool:
+        """True when storage confirmed the object is gone.
+
+        S3's delete is already idempotent, so a missing object is a success. Everything
+        else — permissions, an unreachable endpoint, a transport fault — returns False so
+        the caller leaves the row alone and retries on the next pass. `BotoCoreError` is
+        caught alongside `ClientError` because an endpoint outage raises the former, and
+        letting it escape would abort the whole sweep on the first unreachable object.
+        """
         try:
             self._client.delete_object(Bucket=self._bucket, Key=key)
-        except ClientError as exc:
-            # S3 delete is already idempotent; this only catches transport/permission
-            # problems, which the caller retries on the next cleanup pass.
+        except (ClientError, BotoCoreError) as exc:
             logger.warning("object_delete_failed", key=key, error=str(exc))
+            return False
+        return True
 
 
 @lru_cache

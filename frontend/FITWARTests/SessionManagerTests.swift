@@ -115,3 +115,136 @@ struct SessionManagerTests {
         #expect(sut.state == .loggedOut)
     }
 }
+
+// MARK: - Phase 8: concurrent refresh must not rotate twice
+
+@MainActor
+struct SessionManagerRefreshCoalescingTests {
+    private func makeSUT() -> (SessionManager, MockAuthService, MockKeychainStore) {
+        let authService = MockAuthService()
+        let keychain = MockKeychainStore()
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let sut = SessionManager(authService: authService, keychain: keychain, apiClient: apiClient)
+        return (sut, authService, keychain)
+    }
+
+    private func seed(_ keychain: MockKeychainStore, _ authService: MockAuthService) throws {
+        try keychain.save("stored-refresh", for: KeychainKey.refreshToken)
+        authService.refreshResult = .success(
+            TokenResponseDTO(
+                accessToken: TestJWT.make(subject: UUID()),
+                refreshToken: "rotated-refresh",
+                expiresIn: 900
+            )
+        )
+    }
+
+    @Test func concurrentUnauthorizedCallsTriggerExactlyOneRotation() async throws {
+        /// The regression this locks down: refresh tokens rotate, and the server treats a
+        /// second presentation of an already-rotated token as theft — it revokes the
+        /// whole family. Two screens hitting 401 at once used to each present the same
+        /// stored token, so the user was silently logged out for doing nothing wrong.
+        let (sut, authService, keychain) = makeSUT()
+        try seed(keychain, authService)
+        authService.refreshDelay = .milliseconds(50)
+
+        var attempts = 0
+        let operation: @Sendable () async throws -> String = {
+            await MainActor.run { attempts += 1 }
+            if await MainActor.run(body: { attempts }) <= 4 {
+                throw APIError.server(status: 401, code: "UNAUTHENTICATED", detail: "expired")
+            }
+            return "ok"
+        }
+
+        async let a = sut.authorizedRequest { try await operation() }
+        async let b = sut.authorizedRequest { try await operation() }
+        async let c = sut.authorizedRequest { try await operation() }
+        async let d = sut.authorizedRequest { try await operation() }
+        _ = try? await [a, b, c, d]
+
+        #expect(authService.refreshCallCount == 1)
+    }
+
+    @Test func aRotatedTokenIsNeverPresentedTwice() async throws {
+        /// The precise server-side trigger: the same refresh token reaching
+        /// `/auth/refresh` more than once.
+        let (sut, authService, keychain) = makeSUT()
+        try seed(keychain, authService)
+        authService.refreshDelay = .milliseconds(40)
+
+        let failOnce: @Sendable () async throws -> String = {
+            throw APIError.server(status: 401, code: "UNAUTHENTICATED", detail: "expired")
+        }
+        async let a: () = { _ = try? await sut.authorizedRequest { try await failOnce() } }()
+        async let b: () = { _ = try? await sut.authorizedRequest { try await failOnce() } }()
+        async let c: () = { _ = try? await sut.authorizedRequest { try await failOnce() } }()
+        _ = await [a, b, c]
+
+        let presented = authService.presentedRefreshTokens
+        #expect(presented.count == Set(presented).count, "a token was presented twice: \(presented)")
+    }
+
+    @Test func aLaterRequestCanStillRefreshAfterTheFirstRotationFinished() async throws {
+        /// Coalescing must not latch: once the in-flight refresh completes, a genuinely
+        /// later 401 has to be able to rotate again.
+        let (sut, authService, keychain) = makeSUT()
+        try seed(keychain, authService)
+
+        let alwaysUnauthorized: @Sendable () async throws -> String = {
+            throw APIError.server(status: 401, code: "UNAUTHENTICATED", detail: "expired")
+        }
+        _ = try? await sut.authorizedRequest { try await alwaysUnauthorized() }
+        try keychain.save("stored-refresh-2", for: KeychainKey.refreshToken)
+        _ = try? await sut.authorizedRequest { try await alwaysUnauthorized() }
+
+        #expect(authService.refreshCallCount == 2)
+    }
+
+    @Test func aSuccessfulRefreshLetsTheOriginalCallSucceed() async throws {
+        let (sut, authService, keychain) = makeSUT()
+        try seed(keychain, authService)
+
+        var calls = 0
+        let value = try await sut.authorizedRequest { () async throws -> String in
+            calls += 1
+            if calls == 1 {
+                throw APIError.server(status: 401, code: "UNAUTHENTICATED", detail: "expired")
+            }
+            return "recovered"
+        }
+
+        #expect(value == "recovered")
+        #expect(authService.refreshCallCount == 1)
+    }
+
+    @Test func aFailedRefreshExpiresTheSessionOnce() async throws {
+        let (sut, authService, keychain) = makeSUT()
+        try keychain.save("stored-refresh", for: KeychainKey.refreshToken)
+        authService.refreshResult = .failure(
+            APIError.server(status: 401, code: "REFRESH_REUSE_DETECTED", detail: "reused")
+        )
+
+        let alwaysUnauthorized: @Sendable () async throws -> String = {
+            throw APIError.server(status: 401, code: "UNAUTHENTICATED", detail: "expired")
+        }
+        async let a: () = { _ = try? await sut.authorizedRequest { try await alwaysUnauthorized() } }()
+        async let b: () = { _ = try? await sut.authorizedRequest { try await alwaysUnauthorized() } }()
+        _ = await [a, b]
+
+        #expect(sut.state == .sessionExpired)
+        #expect(authService.refreshCallCount <= 2)
+    }
+
+    @Test func logoutClearsTheStoredRefreshToken() async throws {
+        /// A rotation completing after logout must not write a fresh token back into the
+        /// Keychain that logout just cleared.
+        let (sut, authService, keychain) = makeSUT()
+        try seed(keychain, authService)
+
+        await sut.logout()
+
+        #expect(sut.state == .loggedOut)
+        #expect((try? keychain.read(KeychainKey.refreshToken)) == nil)
+    }
+}

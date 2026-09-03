@@ -32,6 +32,12 @@ class ObjectStorage(Protocol):
         """(size_bytes, content_type) for an existing object, or None if absent."""
         ...
 
-    def delete(self, *, key: str) -> None:
-        """Idempotent — deleting an absent object is a no-op, not an error."""
+    def delete(self, *, key: str) -> bool:
+        """Delete one object. Returns whether storage confirmed it is gone.
+
+        Idempotent — deleting an absent object succeeds. A `False` means the delete did
+        not happen (transport failure, permissions), and the caller must **not** record
+        the object as removed: doing so orphans the bytes forever while the metadata
+        claims they are gone.
+        """
         ...

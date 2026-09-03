@@ -51,7 +51,9 @@ services:
   api:
     build:
       context: ../backend
-      dockerfile: Dockerfile
+      # The dev image: hot reload plus the dev dependencies the bind mounts below rely
+      # on. `Dockerfile` is the production build — no reload, no dev deps, non-root.
+      dockerfile: Dockerfile.dev
     env_file:
       - ../backend/.env.local
     environment:
@@ -69,6 +71,38 @@ services:
       # keep the production build lean; bind-mounted here so `docker compose exec
       # api pytest` works for local dev without baking test code into the image.
       - ../backend/tests:/app/tests
+      - ../backend/pyproject.toml:/app/pyproject.toml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # Periodic jobs: the challenge-day deadline sweep and media retention (Architecture
+  # §35). Deliberately a separate service from `api` — a sweep that overruns must not
+  # compete with request handling, and the two scale independently.
+  #
+  # Both jobs are idempotent and safe to run concurrently with themselves, so this is
+  # not a singleton: correctness comes from database constraints, not from there being
+  # exactly one runner. A platform with a native scheduler can instead run
+  # `python -m app.workers.deadline_sweep` / `media_cleanup` on a cron and set
+  # SCHEDULER_DISABLED_JOBS to turn these off.
+  scheduler:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.dev
+    command: ["python", "-m", "app.workers.scheduler"]
+    env_file:
+      - ../backend/.env.local
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_ENDPOINT_URL: http://minio:9000
+    volumes:
+      - ../backend/app:/app/app
       - ../backend/pyproject.toml:/app/pyproject.toml
     depends_on:
       postgres:

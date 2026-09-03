@@ -50,6 +50,7 @@
 		3C2D5F22B40771E3986A8C03 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AAD800FBF808AFCD29F3B8E /* KeychainStore.swift */; };
 		3E45C9483AB8293025C82659 /* CreateChallengeFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC7107A7D41D5839FEB61F7 /* CreateChallengeFlowView.swift */; };
 		414B45AB110D1DDC9ED1F8C8 /* RealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0187588FB7D9D27090E5B7 /* RealtimeClient.swift */; };
+		4280A5601A73FB47189E3CAC /* BattleViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE61B7A58E8DEA57495D61D6 /* BattleViewModelTests.swift */; };
 		4413CB225F4FED4326694C04 /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EE588BA1C9C105F5F947BA3 /* Endpoint.swift */; };
 		4418F20B4DF52E6B5E75400C /* ChallengesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D771A961565DF8E05F5D1EC2 /* ChallengesService.swift */; };
 		45FB48CB649635021CDC6534 /* VerificationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 108290D5B91EB55E89CC910C /* VerificationModels.swift */; };
@@ -112,6 +113,7 @@
 		D0F46D8B1F0BC64E971A6C93 /* TestJWT.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9507368432092601FAE4885 /* TestJWT.swift */; };
 		D17D86DF815FAAFF27A45A8B /* AnimationTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D77354DF26072F492D9E77 /* AnimationTokens.swift */; };
 		D2BD7FFB6B370716564EB5D8 /* VerifyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19EE639927659ECA60AF314C /* VerifyView.swift */; };
+		D3A235EA69538110E7C9DD53 /* MockBattlesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4005606DC6318C490E95608 /* MockBattlesService.swift */; };
 		D40A27187FEC7DDBF1BE9D0D /* ProofVideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EF3AC98625A7C2E14B3193B /* ProofVideoPicker.swift */; };
 		D9890CF7B07DE46014F33237 /* VerificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F21525B2A73F5046BCA5FE6 /* VerificationService.swift */; };
 		D9E3907E6248E13B34C8D172 /* LaunchFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FAE2CBD4196CCB27B00C767 /* LaunchFlowUITests.swift */; };
@@ -266,7 +268,9 @@
 		BBBCAAB3B8608DCDBF74B19F /* MockMediaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockMediaService.swift; sourceTree = "<group>"; };
 		BCEF09CB98A53DF5D0067BAE /* LoadState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadState.swift; sourceTree = "<group>"; };
 		BD7F558477197A15C90B7407 /* JSONDecoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONDecoding.swift; sourceTree = "<group>"; };
+		BE61B7A58E8DEA57495D61D6 /* BattleViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleViewModelTests.swift; sourceTree = "<group>"; };
 		BF8EDE689DA607690C35D281 /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
+		C4005606DC6318C490E95608 /* MockBattlesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockBattlesService.swift; sourceTree = "<group>"; };
 		C5FBE188D4E4505EC7BDB96F /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		C61DF968FC2ABFB60CD5BDB5 /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
 		C7CFAB2214D6E4B18C981BCE /* BattleModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleModels.swift; sourceTree = "<group>"; };
@@ -372,6 +376,7 @@
 				3FC5C25790A11FFB1B1F252B /* APIClientTests.swift */,
 				30890678266367278D7732C7 /* APIDecodingTests.swift */,
 				FA790CB130BFF7058A5D6430 /* AuthViewModelTests.swift */,
+				BE61B7A58E8DEA57495D61D6 /* BattleViewModelTests.swift */,
 				C8CCAC918D075C2F64417F48 /* ChallengesViewModelTests.swift */,
 				0C97194183303291434A317F /* ChatViewModelTests.swift */,
 				3F3594736AD3B5AB47F3D2A9 /* EvidenceEncodingTests.swift */,
@@ -635,6 +640,7 @@
 			isa = PBXGroup;
 			children = (
 				A631660D3FB6103DE1B4706A /* MockAuthService.swift */,
+				C4005606DC6318C490E95608 /* MockBattlesService.swift */,
 				51073AE54DE7A83B3C11D1CB /* MockGameService.swift */,
 				3E6386C74F77F0154371F8FF /* MockGroupsService.swift */,
 				AC2B806DE07561C59DCF87F0 /* MockHealthKitService.swift */,
@@ -938,6 +944,7 @@
 				F60F926C74D84658D8CB9724 /* APIClientTests.swift in Sources */,
 				07442E2230D51017F37CFA44 /* APIDecodingTests.swift in Sources */,
 				0B853724113723F97516AD9F /* AuthViewModelTests.swift in Sources */,
+				4280A5601A73FB47189E3CAC /* BattleViewModelTests.swift in Sources */,
 				5735D38312DED2479A1F8616 /* ChallengesViewModelTests.swift in Sources */,
 				E00BB472DA669A0A5641A30C /* ChatViewModelTests.swift in Sources */,
 				B0BC22865E8DD1E8611A3ECA /* EvidenceEncodingTests.swift in Sources */,
@@ -948,6 +955,7 @@
 				ED31D3432B30CB537CD41E1C /* LeaderboardViewModelTests.swift in Sources */,
 				06A79A889E0FD21E6DD9A87E /* MediaAndChatTests.swift in Sources */,
 				B3CD249A6F92DE17467A68B8 /* MockAuthService.swift in Sources */,
+				D3A235EA69538110E7C9DD53 /* MockBattlesService.swift in Sources */,
 				6ABEAFCDC243DC24561FB792 /* MockGameService.swift in Sources */,
 				63C1C8B7C3D93CFEA8C2AD82 /* MockGroupsService.swift in Sources */,
 				1C5F68DC783FB6890B9341F9 /* MockHealthKitService.swift in Sources */,

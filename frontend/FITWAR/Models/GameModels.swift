@@ -59,14 +59,32 @@ struct MyChallengeGameState: Decodable, Sendable, Equatable {
     let eliminatedAt: Date?
 }
 
+/// Why XP was granted.
+///
+/// Decoding is deliberately forgiving. This is a plain `String`-backed enum on the wire,
+/// and a strict one throws on any value it does not know — so when Phase 7 added
+/// `battle_win` server-side, every user who won a battle got a *completely broken* XP
+/// screen, because one unrecognised ledger row failed the whole response. An unknown
+/// reason now renders as a neutral row instead, the same principle `RealtimeEvent.parse`
+/// applies to socket events: a server that adds a value must never break an older client.
 enum XPReason: String, Decodable, Sendable, Equatable {
     case dailyCompletion = "daily_completion"
     case streakBonus = "streak_bonus"
+    case battleWin = "battle_win"
+    /// Anything this client predates. Never sent by the server under this name.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = XPReason(rawValue: raw) ?? .unknown
+    }
 
     var displayName: String {
         switch self {
         case .dailyCompletion: "Mission complete"
         case .streakBonus: "Streak bonus"
+        case .battleWin: "Battle win"
+        case .unknown: "XP earned"
         }
     }
 }

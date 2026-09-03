@@ -66,5 +66,10 @@ class MediaRepository:
             .order_by(MediaAsset.expires_at.asc())
             .limit(limit)
             .with_for_update(skip_locked=True)
+            # Same reasoning as `GameRepository.lock_participant`: a row already in this
+            # session's identity map would otherwise be returned with its pre-lock
+            # attributes, and the sweep would decide from stale `expires_at` /
+            # `object_deleted_at` values.
+            .execution_options(populate_existing=True)
         )
         return list(result.scalars().all())
