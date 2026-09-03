@@ -122,6 +122,29 @@ class GroupMemberRepository:
         member = await self.get(group_id, user_id)
         return member if member and member.status == GroupMemberStatus.ACTIVE else None
 
+    async def shared_group_ids(self, a: uuid.UUID, b: uuid.UUID) -> list[uuid.UUID]:
+        """Groups where both users are active members.
+
+        Backs the battle rule "you may challenge someone you share a squad with" — a
+        self-join rather than two round trips, so the answer is one consistent read.
+        """
+        theirs = GroupMember.__table__.alias("theirs")
+        result = await self._session.execute(
+            select(GroupMember.group_id)
+            .join(
+                theirs,
+                (theirs.c.group_id == GroupMember.group_id)
+                & (theirs.c.user_id == b)
+                & (theirs.c.status == GroupMemberStatus.ACTIVE),
+            )
+            .where(
+                GroupMember.user_id == a,
+                GroupMember.status == GroupMemberStatus.ACTIVE,
+            )
+            .order_by(GroupMember.group_id)
+        )
+        return list(result.scalars().all())
+
     async def add(
         self, *, group_id: uuid.UUID, user_id: uuid.UUID, role: GroupRole
     ) -> GroupMember:

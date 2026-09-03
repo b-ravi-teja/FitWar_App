@@ -150,16 +150,63 @@ SURVIVAL. Joining a *different* challenge is always available.
 
 ## Battles
 
+**Status: all rows below are implemented** (Phase 7).
+
+A battle is private to its **two players** — not to its squad. Every `/battles/{id}` route
+answers `404 BATTLE_NOT_FOUND` for a non-participant, byte-identical to a made-up id, so
+none of them confirms that a private battle exists. There is no viewer tier.
+
+Underneath, each battle owns a `Challenge` with `game_mode = 1v1` that carries the rules,
+the days and the scoring (Architecture §24.1). That challenge is **not reachable through
+the challenge API** — `GET/PATCH/POST /challenges/{id}/*` all answer `CHALLENGE_NOT_FOUND`
+for it, and it never appears in `GET /challenges` or `GET /groups/{id}/challenges`. This
+is a security boundary: `POST /challenges/{id}/join` would otherwise add a third player to
+a 1v1 (§24.2).
+
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /battles` | Required | `?scope=mine` | live/pending battles: `{ id, status, opponent, my_score, their_score, day, duration_days, time_remaining }[]` | — |
-| `GET /battles/rivals` | Required | `?group_id=` | challengeable users with head-to-head record: `{ user_id, display_name, wins_against, losses_against }[]` (backs "CHALLENGE SOMEONE" list — not in the original Phase 0 sketch, added because the design requires it) | — |
-| `POST /battles` | Required | `{ opponent_user_id, activity_type, target_value?, duration_days }` | `201` battle, status=pending | `409 ALREADY_PENDING_WITH_USER` |
-| `GET /battles/{id}` | Required, participant | — | detail | `403` |
-| `POST /battles/{id}/accept` | Required, invited participant | — | `200`, status=active | `409 NOT_INVITED` |
-| `POST /battles/{id}/decline` | Required, invited participant | — | `200`, status=cancelled | — |
-| `POST /battles/{id}/verify` | Required, participant | `{ provider, evidence }` | same shape as challenge verify; on final day, resolves battle and returns victor | `409 BATTLE_NOT_ACTIVE` |
-| `WS /ws/battles/{id}` | Required, participant | — | pushes `battle_status_changed`, `battle_completed` | — |
+| `GET /battles` ✅ | Required | `?status=pending\|active\|completed\|cancelled` (omit for all) | the caller's battles, newest first — see the shape below. `scope=mine` is not a parameter because it is the only scope: a battle you are not in is never selected, not filtered out | — |
+| `GET /battles/rivals` ✅ | Required, group member | `?group_id=` (required) | `{ user_id, display_name, wins_against, losses_against, live_battle_id }[]` — squad-mates the caller can challenge, with the head-to-head record counted from finalized battles. `live_battle_id` is set when a battle with that rival is already pending or active, so the UI offers "VIEW" instead of a "CHALLENGE" the server would refuse | `403 NOT_A_MEMBER` |
+| `POST /battles` ✅ | Required | `{ opponent_user_id, activity_type, target_value?, duration_days, group_id? }` | `201` battle, `status=pending`. `target_value` omitted → the activity's default (ADR 0009). `group_id` omitted → inferred when exactly one squad is shared | `409 ALREADY_PENDING_WITH_USER`, `409 GROUP_REQUIRED`, `409 INVALID_BATTLE_CONFIG`, `403 OPPONENT_NOT_AVAILABLE` |
+| `GET /battles/{id}` ✅ | Required, participant | — | battle detail (shape below). Sweeps first, so a battle whose window closed never reads as still live | `404 BATTLE_NOT_FOUND` |
+| `POST /battles/{id}/accept` ✅ | Required, invited participant | — | `200`, `status=active`; the battle's window starts now. **Idempotent** — accepting again returns the same battle with the same `start_at` | `409 NOT_INVITED`, `409 BATTLE_NOT_PENDING`, `404 BATTLE_NOT_FOUND` |
+| `POST /battles/{id}/decline` ✅ | Required, invited participant | — | `200`, `status=cancelled`. **Idempotent.** No outcome is written on either side — a refused invitation started nothing, so it is not a forfeit (§24.3) | `409 NOT_INVITED`, `409 BATTLE_NOT_PENDING` |
+| `POST /battles/{id}/verify` ✅ | Required, participant | `{ provider, evidence }` — the **same body** as challenge verify | `{ verification: <challenge-verify response>, battle: <battle detail> }`. The side the evidence lands on comes from the token, never the body. Finalizes the battle if this settled the last open day, and the returned `battle` is then the final one | `409 BATTLE_NOT_ACTIVE`, `400 INVALID_EVIDENCE`, `404 BATTLE_NOT_FOUND` |
+| `WS /ws/battles/{id}` ✅ | Required, **participant** | `?token=` | pushes `battle_status_changed`, `battle_progress`, `battle_completed`. A squad-mate who is not playing is refused with close code `4403`, identically to an unknown battle | — |
+
+**Battle shape** (returned by every row above):
+
+```
+{ id, group_id, status, activity_type, target_value, unit,
+  day_index, duration_days, timezone, start_at, end_at, completed_at,
+  time_remaining_seconds,
+  sides: [{ user_id, display_name, status, score, days_completed, is_me }],
+  winner_user_id, my_outcome, my_xp_awarded }
+```
+
+- `time_remaining_seconds` is server-computed. The battle day belongs to the battle's
+  frozen timezone, so two devices with different clocks must not disagree about it.
+- `sides` carries the **contest** — name, score, banked days, status — and has no field
+  for evidence, proof media, health records or verification metadata (§24.9).
+- `winner_user_id` and `my_outcome` are `null` until the battle is finalized. There is no
+  provisional winner: a mutable "current winner" is exactly what §20.3 forbids.
+- `my_xp_awarded` is read back out of the XP ledger, not restated from a constant. `null`
+  for the loser and while unfinished — a `0` would render as "you earned nothing", which
+  is a different claim.
+
+**Outcome** is the frozen §20.3 rule, unchanged and shared with POINTS-mode close and
+leaderboard ordering: highest score → earliest to reach it → longer streak → earlier join
+→ lower `user_id`. A battle never draws.
+
+**Finalization** is due when the window closes *or* every day is resolved for both
+players, and runs once in one locked transaction (§24.6). Afterwards the result is
+immutable: winner, loser, scores and the XP award cannot change, and **late evidence is
+refused with `409 BATTLE_NOT_ACTIVE`** rather than silently ignored.
+
+**Verification method:** V1 battles verify from Apple Health only, so `activity_type` must
+be one Health can measure (`steps`, `active_calories`, `distance`). `pushups` returns
+`409 INVALID_BATTLE_CONFIG` — video proof needs a reviewer who is not competing, and a
+two-player contest has none (ADR 0009).
 
 ## Notifications
 

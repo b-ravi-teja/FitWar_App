@@ -11,6 +11,7 @@ final class AppDependencies {
     let challengesService: ChallengesServiceProtocol
     let verificationService: VerificationServiceProtocol
     let gameService: GameServiceProtocol
+    let battlesService: BattlesServiceProtocol
     let mediaService: MediaServiceProtocol
     let chatService: ChatServiceProtocol
     let realtimeClient: RealtimeClientProtocol
@@ -29,6 +30,7 @@ final class AppDependencies {
         challengesService = ChallengesService(client: client)
         verificationService = VerificationService(client: client)
         gameService = GameService(client: client)
+        battlesService = BattlesService(client: client)
         mediaService = MediaService(client: client)
         chatService = ChatService(client: client)
         realtimeClient = WebSocketRealtimeClient()

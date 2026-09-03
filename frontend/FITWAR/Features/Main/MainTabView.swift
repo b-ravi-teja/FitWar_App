@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Bottom nav exactly as approved: HOME · WARS · BATTLES · SQUAD · YOU. WARS and SQUAD
-/// are now real, backend-connected screens; Battles remains a shell until the 1v1 phase.
+/// Bottom nav exactly as approved: HOME · WARS · BATTLES · SQUAD · YOU. Every tab is a
+/// real, backend-connected screen.
 struct MainTabView: View {
     var body: some View {
         TabView {
@@ -11,7 +11,7 @@ struct MainTabView: View {
             ChallengesListView()
                 .tabItem { tabLabel("WARS", system: "flame") }
 
-            BattlesPlaceholderView()
+            BattlesListView()
                 .tabItem { tabLabel("BATTLES", system: "bolt") }
 
             GroupsListView()

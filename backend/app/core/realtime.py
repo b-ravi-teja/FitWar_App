@@ -29,6 +29,12 @@ def challenge_channel(challenge_id: uuid.UUID) -> str:
     return f"{CHANNEL_PREFIX}:challenge:{challenge_id}"
 
 
+def battle_channel(battle_id: uuid.UUID) -> str:
+    """One channel per battle. Subscription is authorized against `battle_participant`,
+    so the channel name carrying an id gives nobody access to it (§15)."""
+    return f"{CHANNEL_PREFIX}:battle:{battle_id}"
+
+
 async def publish_realtime(channel: str, payload: dict[str, Any]) -> bool:
     """Fan out one event. Returns whether it actually reached Redis.
 

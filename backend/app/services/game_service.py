@@ -55,6 +55,7 @@ from app.models.user import UserProfile
 from app.repositories.game import GameRepository
 
 PROGRESS_REFERENCE = "daily_challenge_progress"
+BATTLE_REFERENCE = "battle"
 
 
 class DayResolution:
@@ -364,6 +365,48 @@ class GameService:
             )
             for p in participants
         ]
+
+    async def standings(
+        self, challenge: Challenge, participants: list[ChallengeParticipant]
+    ) -> list[Standing]:
+        """The comparable form of a set of participants — the input to `rank_key`.
+
+        Public so battle finalization compares its two players through the *same* frozen
+        §20.3 key the leaderboard sorts by, rather than a second implementation that
+        could drift from it.
+        """
+        return await self._standings(challenge, participants)
+
+    async def award_battle_win_xp(
+        self, *, user_id: uuid.UUID, battle_id: uuid.UUID
+    ) -> int:
+        """Credit the 1v1 win bonus exactly once. Returns what was actually granted.
+
+        Same ledger, same idempotency key, same `xp_total` invariant as a daily
+        completion — there is no second battle XP system (§9). The reference is the
+        battle itself, so a replayed finalization collides on
+        `uq_xp_transaction_idempotency` and grants nothing. Losers are simply not
+        awarded; nobody is ever debited (ADR 0002).
+        """
+        amount = xp_rules.battle_win_xp()
+        inserted = await self._repo.insert_xp_once(
+            user_id=user_id,
+            amount=amount,
+            reason=XPReason.BATTLE_WIN,
+            reference_type=BATTLE_REFERENCE,
+            reference_id=battle_id,
+        )
+        if not inserted:
+            return 0
+
+        profile = await self._repo.lock_profile(user_id)
+        if profile is not None:
+            profile.xp_total += amount
+        await self._session.flush()
+        self._publish_after_commit(
+            EventType.XP_AWARDED, user_id=user_id, payload={"amount": amount}
+        )
+        return amount
 
     async def leaderboard(
         self, challenge: Challenge, *, now: datetime | None = None

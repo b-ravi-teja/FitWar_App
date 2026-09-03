@@ -34,6 +34,12 @@ private struct VerificationServiceKey: EnvironmentKey {
     )
 }
 
+private struct BattlesServiceKey: EnvironmentKey {
+    static let defaultValue: BattlesServiceProtocol = BattlesService(
+        client: APIClient(baseURL: AppConfig.apiBaseURL)
+    )
+}
+
 private struct GameServiceKey: EnvironmentKey {
     static let defaultValue: GameServiceProtocol = GameService(
         client: APIClient(baseURL: AppConfig.apiBaseURL)
@@ -64,6 +70,11 @@ extension EnvironmentValues {
     var verificationService: VerificationServiceProtocol {
         get { self[VerificationServiceKey.self] }
         set { self[VerificationServiceKey.self] = newValue }
+    }
+
+    var battlesService: BattlesServiceProtocol {
+        get { self[BattlesServiceKey.self] }
+        set { self[BattlesServiceKey.self] = newValue }
     }
 
     var gameService: GameServiceProtocol {

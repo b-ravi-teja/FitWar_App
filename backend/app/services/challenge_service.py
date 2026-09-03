@@ -69,6 +69,13 @@ class ChallengeService:
         participant_limit: int | None,
         start_at: datetime | None,
     ) -> Challenge:
+        if game_mode is GameMode.ONE_V_ONE:
+            # A 1v1 is a `Battle`, and its backing challenge is created by
+            # `BattleService` alone. Accepting it here would produce a two-slot contest
+            # with no invitation, no opponent and an open join endpoint.
+            raise InvalidChallengeConfigError(
+                "1v1 is a battle — start one from the Battles tab, not here."
+            )
         if duration_days < 1 or duration_days > MAX_DURATION_DAYS:
             raise InvalidChallengeConfigError(
                 f"Duration must be between 1 and {MAX_DURATION_DAYS} days."
@@ -116,6 +123,12 @@ class ChallengeService:
     async def get(self, challenge_id: uuid.UUID) -> Challenge:
         challenge = await self._challenges.get_by_id(challenge_id)
         if challenge is None:
+            raise ChallengeNotFoundError(f"No challenge {challenge_id}.")
+        if challenge.game_mode is GameMode.ONE_V_ONE:
+            # The battle's backing challenge is not reachable through the challenge API
+            # — not readable, and above all not joinable, editable or cancellable. The
+            # error is the same one a missing id produces, so this never doubles as a
+            # probe for which challenge ids happen to be battles.
             raise ChallengeNotFoundError(f"No challenge {challenge_id}.")
         await self.sync_status(challenge)
         return challenge

@@ -18,12 +18,15 @@ from app.domain.groups.exceptions import (
     NotAGroupMemberError,
 )
 from app.domain.verification.exceptions import NotAReviewerError
+from app.models.battle import Battle
+from app.models.battle import BattleParticipant as BattleParticipantRow
 from app.models.challenge import Challenge, ChallengeParticipant
 from app.models.group import Group, GroupMember, GroupRole
 from app.models.user import User, UserStatus
 from app.repositories.groups import GroupMemberRepository, GroupRepository
 from app.repositories.users import UserRepository
 from app.services.auth_service import AuthService
+from app.services.battle_service import BattleService
 from app.services.challenge_service import ChallengeService
 from app.services.chat_service import ChatService
 from app.services.game_service import GameService
@@ -87,6 +90,13 @@ def get_group_service(session: DbSession) -> GroupService:
 
 
 GroupServiceDep = Annotated[GroupService, Depends(get_group_service)]
+
+
+def get_battle_service(session: DbSession) -> BattleService:
+    return BattleService(session)
+
+
+BattleServiceDep = Annotated[BattleService, Depends(get_battle_service)]
 
 
 def get_challenge_service(session: DbSession) -> ChallengeService:
@@ -269,3 +279,27 @@ async def challenge_editor_context(
 
 
 ChallengeEditorContext = Annotated[ChallengeContext, Depends(challenge_editor_context)]
+
+
+@dataclass(frozen=True)
+class BattleContext:
+    battle: Battle
+    participant: BattleParticipantRow
+    user: User
+
+
+async def battle_participant_context(
+    battle_id: uuid.UUID, user: CurrentUser, battles: BattleServiceDep
+) -> BattleContext:
+    """404 unless the caller holds a `BattleParticipant` row for this battle.
+
+    There is no viewer tier for battles: a 1v1 is private to its two players, and even a
+    squad-mate reads it only through their own battle list. A non-participant gets the
+    same `BATTLE_NOT_FOUND` a made-up id produces, so the endpoint never confirms that a
+    battle exists (§12).
+    """
+    battle, participant = await battles.get_for_participant(battle_id, user.id)
+    return BattleContext(battle=battle, participant=participant, user=user)
+
+
+BattleParticipant = Annotated[BattleContext, Depends(battle_participant_context)]

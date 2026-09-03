@@ -17,7 +17,7 @@ from app.models.challenge import (
     DailyProgressStatus,
     ParticipantStatus,
 )
-from app.models.game import Elimination, Warning, XPTransaction
+from app.models.game import Elimination, Warning, XPReason, XPTransaction
 from app.models.user import User, UserProfile
 
 
@@ -31,19 +31,28 @@ class GameRepository:
         This is the serialization point for the whole competitive pipeline: two requests
         resolving the same participant queue here rather than interleaving their
         read-modify-write of score, streak and miss counters.
+
+        `populate_existing` refreshes the row the lock just granted. Without it a caller
+        that had already loaded this participant earlier in the request would read the
+        pre-lock attribute values straight through the lock.
         """
         result = await self._session.execute(
             select(ChallengeParticipant)
             .where(ChallengeParticipant.id == participant_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
     async def lock_profile(self, user_id: uuid.UUID) -> UserProfile | None:
         """Locked because `xp_total` is a read-modify-write; without it two concurrent
-        awards to the same user could both read the old total and lose one increment."""
+        awards to the same user could both read the old total and lose one increment.
+        `populate_existing` for the same reason as `lock_participant`."""
         result = await self._session.execute(
-            select(UserProfile).where(UserProfile.user_id == user_id).with_for_update()
+            select(UserProfile)
+            .where(UserProfile.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -57,6 +66,39 @@ class GameRepository:
             )
         )
         return result.first() is not None
+
+    async def insert_xp_once(
+        self,
+        *,
+        user_id: uuid.UUID,
+        amount: int,
+        reason: XPReason,
+        reference_type: str,
+        reference_id: uuid.UUID,
+    ) -> bool:
+        """Write one ledger row, or report that it already existed.
+
+        `ON CONFLICT DO NOTHING` against `uq_xp_transaction_idempotency` is what makes
+        the award idempotent under a genuine race: the loser of the race learns it lost
+        from the database rather than from a pre-check it could have run too early. The
+        boolean is what tells the caller whether to move `xp_total` — the two must never
+        drift apart (Architecture §3.2).
+        """
+        statement = (
+            pg_insert(XPTransaction)
+            .values(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                amount=amount,
+                reason=reason,
+                reference_type=reference_type,
+                reference_id=reference_id,
+            )
+            .on_conflict_do_nothing(constraint="uq_xp_transaction_idempotency")
+            .returning(XPTransaction.id)
+        )
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none() is not None
 
     async def get_or_create_progress(
         self, participant_id: uuid.UUID, day: date

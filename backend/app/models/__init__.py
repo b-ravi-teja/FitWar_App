@@ -1,6 +1,12 @@
 """SQLAlchemy ORM models. Import every model module here so Alembic autogenerate sees them."""
 
 from app.models.auth import RefreshToken
+from app.models.battle import (
+    Battle,
+    BattleParticipant,
+    BattleParticipantStatus,
+    BattleStatus,
+)
 from app.models.challenge import (
     Challenge,
     ChallengeParticipant,
@@ -28,6 +34,10 @@ from app.models.verification import (
 )
 
 __all__ = [
+    "Battle",
+    "BattleParticipant",
+    "BattleParticipantStatus",
+    "BattleStatus",
     "Challenge",
     "ChallengeParticipant",
     "ChallengeRule",

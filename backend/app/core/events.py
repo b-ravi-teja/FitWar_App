@@ -28,6 +28,10 @@ class EventType(enum.StrEnum):
     WARNING_ISSUED = "warning_issued"
     PARTICIPANT_ELIMINATED = "participant_eliminated"
     CHALLENGE_COMPLETED = "challenge_completed"
+    BATTLE_INVITED = "battle_invited"
+    BATTLE_STATUS_CHANGED = "battle_status_changed"
+    BATTLE_PROGRESS = "battle_progress"
+    BATTLE_COMPLETED = "battle_completed"
 
 
 @dataclass(frozen=True)

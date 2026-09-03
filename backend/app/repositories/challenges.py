@@ -19,6 +19,12 @@ from app.models.challenge import (
 from app.models.group import GroupMember, GroupMemberStatus
 from app.models.user import User, UserProfile
 
+# A battle's backing challenge is addressed through `/battles/...` and nowhere else.
+# Every listing and every clock sweep below excludes it, which is both correctness (a
+# 1v1 has no place in the WARS tab) and security: leaving it visible would expose
+# `POST /challenges/{id}/join` as a way to put a third player into a 1v1.
+_NOT_A_BATTLE = Challenge.game_mode != GameMode.ONE_V_ONE
+
 
 class ChallengeRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -69,7 +75,7 @@ class ChallengeRepository:
     async def list_for_group(
         self, group_id: uuid.UUID, *, status: ChallengeStatus | None = None
     ) -> list[Challenge]:
-        stmt = select(Challenge).where(Challenge.group_id == group_id)
+        stmt = select(Challenge).where(Challenge.group_id == group_id, _NOT_A_BATTLE)
         if status is not None:
             stmt = stmt.where(Challenge.status == status)
         result = await self._session.execute(stmt.order_by(Challenge.created_at.desc()))
@@ -90,7 +96,7 @@ class ChallengeRepository:
         stmt = (
             select(Challenge, ChallengeParticipant)
             .join(ChallengeParticipant, ChallengeParticipant.challenge_id == Challenge.id)
-            .where(ChallengeParticipant.user_id == user_id)
+            .where(ChallengeParticipant.user_id == user_id, _NOT_A_BATTLE)
         )
         if status is not None:
             stmt = stmt.where(Challenge.status == status)
@@ -106,11 +112,14 @@ class ChallengeRepository:
         """
         result = await self._session.execute(
             select(Challenge).where(
+                _NOT_A_BATTLE,
                 (
-                    (Challenge.status == ChallengeStatus.DRAFT)
-                    & (Challenge.start_at <= now)
-                )
-                | ((Challenge.status == ChallengeStatus.ACTIVE) & (Challenge.end_at <= now))
+                    (
+                        (Challenge.status == ChallengeStatus.DRAFT)
+                        & (Challenge.start_at <= now)
+                    )
+                    | ((Challenge.status == ChallengeStatus.ACTIVE) & (Challenge.end_at <= now))
+                ),
             )
         )
         return list(result.scalars().all())
@@ -191,6 +200,7 @@ class ChallengeParticipantRepository:
                 Challenge.group_id == group_id,
                 ChallengeParticipant.user_id == user_id,
                 Challenge.status == ChallengeStatus.ACTIVE,
+                _NOT_A_BATTLE,
             )
         )
         return list(result.scalars().all())
@@ -276,7 +286,7 @@ class GroupActivityRepository:
             select(UserProfile.display_name, Challenge.name, Challenge.created_at)
             .join(User, User.id == Challenge.creator_id)
             .join(UserProfile, UserProfile.user_id == User.id)
-            .where(Challenge.group_id == group_id)
+            .where(Challenge.group_id == group_id, _NOT_A_BATTLE)
             .order_by(Challenge.created_at.desc())
             .limit(limit)
         )

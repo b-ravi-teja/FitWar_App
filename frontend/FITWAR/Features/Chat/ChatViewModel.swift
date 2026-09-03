@@ -105,7 +105,10 @@ final class ChatViewModel {
                     // Deliberately a refresh, not an append: delivery is not
                     // exactly-once, and re-reading makes a duplicate event harmless.
                     await self.load()
-                case .gameStateChanged, .unknown:
+                case .gameStateChanged, .battleInvited, .battleChanged, .battleCompleted,
+                     .unknown:
+                    // Not this screen's business. Battles have their own socket and
+                    // their own reload path.
                     break
                 }
             }

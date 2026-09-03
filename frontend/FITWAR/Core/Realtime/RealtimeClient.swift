@@ -20,6 +20,17 @@ enum RealtimeEvent: Sendable, Equatable {
     /// A game event (score, warning, elimination) — the client re-reads REST rather than
     /// trusting a payload to carry competitive state.
     case gameStateChanged
+    /// Someone challenged the caller's squad. Carries only the battle's identity —
+    /// the Battles tab reloads over REST to find out what it is.
+    case battleInvited(battleId: UUID)
+    /// A battle moved (accepted, declined, or a side posted evidence). Deliberately
+    /// carries no scores: the server never puts competitive state on the wire here, so
+    /// the only correct response is to re-read.
+    case battleChanged(battleId: UUID)
+    /// A battle was finalized. `winnerUserId` is the server's verdict, not a hint —
+    /// but the screen still refreshes over REST before showing Victory or Defeat,
+    /// because delivery is not exactly-once and REST is the record.
+    case battleCompleted(battleId: UUID, winnerUserId: UUID?)
     case unknown
 
     /// Parsing is deliberately forgiving: an unrecognised event becomes `.unknown`
@@ -28,6 +39,7 @@ enum RealtimeEvent: Sendable, Equatable {
         let type = json["type"] as? String ?? ""
         let messageId = (json["message_id"] as? String).flatMap(UUID.init)
         let groupId = (json["group_id"] as? String).flatMap(UUID.init)
+        let battleId = (json["battle_id"] as? String).flatMap(UUID.init)
         switch type {
         case "chat_message":
             if let messageId, let groupId { return .chatMessage(messageId: messageId, groupId: groupId) }
@@ -37,6 +49,17 @@ enum RealtimeEvent: Sendable, Equatable {
             if let messageId { return .reactionChanged(messageId: messageId) }
         case "score_changed", "warning_issued", "participant_eliminated", "challenge_completed":
             return .gameStateChanged
+        case "battle_invited":
+            if let battleId { return .battleInvited(battleId: battleId) }
+        case "battle_status_changed", "battle_progress":
+            if let battleId { return .battleChanged(battleId: battleId) }
+        case "battle_completed":
+            if let battleId {
+                return .battleCompleted(
+                    battleId: battleId,
+                    winnerUserId: (json["winner_user_id"] as? String).flatMap(UUID.init)
+                )
+            }
         default:
             return .unknown
         }
@@ -48,6 +71,10 @@ protocol RealtimeClientProtocol: Sendable {
     /// Connect and stream events. The stream simply finishes when the socket drops —
     /// the caller decides whether to reconnect.
     func events(groupId: UUID, token: String) -> AsyncStream<RealtimeEvent>
+    /// The battle equivalent. A separate socket rather than a filter on the group one:
+    /// the server authorizes battle channels against `battle_participant`, so a
+    /// squad-mate who isn't playing is refused (Architecture §24).
+    func events(battleId: UUID, token: String) -> AsyncStream<RealtimeEvent>
     func disconnect()
 }
 
@@ -60,9 +87,17 @@ final class WebSocketRealtimeClient: RealtimeClientProtocol, @unchecked Sendable
     }
 
     func events(groupId: UUID, token: String) -> AsyncStream<RealtimeEvent> {
+        stream(path: "api/v1/ws/groups/\(groupId.uuidString)", token: token)
+    }
+
+    func events(battleId: UUID, token: String) -> AsyncStream<RealtimeEvent> {
+        stream(path: "api/v1/ws/battles/\(battleId.uuidString)", token: token)
+    }
+
+    private func stream(path: String, token: String) -> AsyncStream<RealtimeEvent> {
         AsyncStream { continuation in
             guard var components = URLComponents(
-                url: baseURL.appendingPathComponent("api/v1/ws/groups/\(groupId.uuidString)"),
+                url: baseURL.appendingPathComponent(path),
                 resolvingAgainstBaseURL: false
             ) else {
                 continuation.finish()

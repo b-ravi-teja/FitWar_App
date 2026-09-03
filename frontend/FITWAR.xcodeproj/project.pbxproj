@@ -20,7 +20,6 @@
 		0E5718A1806EA1BE0089C264 /* GameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632F059A9FB9C9BCB892EE22 /* GameService.swift */; };
 		0FC43CFAC6F25B48AC6E805E /* LeaderboardRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D92C16307B23A9504A7E2D /* LeaderboardRow.swift */; };
 		1019C0FB934D261ECABF2CDB /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8214B7BE42879C990B684280 /* Spacing.swift */; };
-		112DD657C3FDE56EBCF037EC /* BattlesPlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9057E66E79F99DC50DD15158 /* BattlesPlaceholderView.swift */; };
 		120DAD2300FF97DAFE69D745 /* SectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8BBC620EED3339B858373D0 /* SectionHeader.swift */; };
 		12D8D349AB9334DE94421424 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50D0DBCADF3D427ED82EF494 /* MainTabView.swift */; };
 		15F14F9F14689EF4E3946EAE /* GroupsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65D5F29D9D0C0EC664ED0BBA /* GroupsService.swift */; };
@@ -35,6 +34,7 @@
 		223FCE4B6FEF84AE9F49799B /* ProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E920EB2433815B57688C0B2 /* ProfileViewModel.swift */; };
 		242CBD2918018CD5F47BFC29 /* ChallengesListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7BAAE2EC3536D38B7BEF774 /* ChallengesListViewModel.swift */; };
 		27105779D21A2FAD8778EE11 /* WelcomeLandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FB56C5063F900D10FB10AA5 /* WelcomeLandingView.swift */; };
+		274FF713D6A983FFD55020F5 /* BattleDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1337BE4EAE2FB7826666945B /* BattleDetailViewModel.swift */; };
 		27B60B9467B24E37B67D73EC /* ProgressComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCF60A8578708811243AD95E /* ProgressComponents.swift */; };
 		28E8FEB82E0BDF6EEECEBBF1 /* ProfileViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85F4105E354B66D14E88AFA8 /* ProfileViewModelTests.swift */; };
 		29967B29A52488CEFF56C12F /* GroupsChallengesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 833FF9394C6AF86376AD13F8 /* GroupsChallengesUITests.swift */; };
@@ -43,6 +43,7 @@
 		2B00A3AC2538D913500A6046 /* VerifyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 698B13B22EA290A7615A1288 /* VerifyViewModel.swift */; };
 		2FAF65DFDDC13ABC765C9C58 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3851F30A630FD65DEB475EA5 /* ProfileView.swift */; };
 		34A88E41B2C8864B64657F5D /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3B5656C4B8DFBF14A2EADF97 /* JetBrainsMono-Regular.ttf */; };
+		3531BAC9DCB76A9C0BC2277D /* BattleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A5C8A37D0A0FD7A2A46EC3 /* BattleDetailView.swift */; };
 		368D2DD99819B9116D57E0CA /* HealthKitServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB82B26B1C9E4A7AD0AC2C1 /* HealthKitServiceTests.swift */; };
 		3A06DE1BB1E33A2D8A6F554F /* Avatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33C29E0197CA42E553D882BA /* Avatar.swift */; };
 		3A22D87FEF572A07C3D5E250 /* VerifyViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A0E8B61F5917C64A8E07E6 /* VerifyViewModelTests.swift */; };
@@ -52,12 +53,14 @@
 		4413CB225F4FED4326694C04 /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EE588BA1C9C105F5F947BA3 /* Endpoint.swift */; };
 		4418F20B4DF52E6B5E75400C /* ChallengesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D771A961565DF8E05F5D1EC2 /* ChallengesService.swift */; };
 		45FB48CB649635021CDC6534 /* VerificationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 108290D5B91EB55E89CC910C /* VerificationModels.swift */; };
+		4681D5CB92F865BE19C4E8FA /* BattleComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 197C6D19B3A70F13ED5830DD /* BattleComponents.swift */; };
 		46F0C1D6F1D4DAC8C82A4951 /* SegmentedTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0817600FEDCC28C65B4771EA /* SegmentedTabs.swift */; };
 		49471A426C101C6CFE5ED307 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FB90E607CC45A95E0EC5381 /* ChatView.swift */; };
 		4D887E082123656A5D9E4F7E /* GroupDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF8F38C70465075B52C088C /* GroupDetailViewModel.swift */; };
 		4E7FB89044D4489DE70352A1 /* ActivityRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D173EE65F1D9868456979A9 /* ActivityRow.swift */; };
 		512014B51B1330A307603814 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1863908100F1950DF39A46A3 /* User.swift */; };
 		5735D38312DED2479A1F8616 /* ChallengesViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CCAC918D075C2F64417F48 /* ChallengesViewModelTests.swift */; };
+		5939A5E085E3AAB7DF418234 /* BattlesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28DAB9191B8564AFDBEC67C4 /* BattlesListView.swift */; };
 		5B523CEADCEE8E34FCF69934 /* ChallengeDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7D0E3D6AB8CC3C50C88328 /* ChallengeDetailViewModel.swift */; };
 		5C48576A9E10DB74DF2F7A45 /* LeaderboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E3B9215513682C1570BE675 /* LeaderboardView.swift */; };
 		5CBC189C22FE925EDD085384 /* RegisterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3FDAB608B143382F86574B4 /* RegisterView.swift */; };
@@ -73,6 +76,7 @@
 		79F2C887F5B6E24609C3CD2A /* GroupModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D4C67B23D5044918260581 /* GroupModels.swift */; };
 		7BE2BD3F1C825EABD4CC5DC3 /* OnboardingHealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0365CE80F6C7C424CF3B137D /* OnboardingHealthView.swift */; };
 		7DBF3F22762AA1C9AC806CDF /* AuthErrorPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 750B2F2A5CE1F2C7B0122207 /* AuthErrorPresentation.swift */; };
+		8382E482BF48E07A81389A18 /* BattleOutcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7076A0894621795CD9725444 /* BattleOutcomeView.swift */; };
 		85570A7CDDEC1C4FD1C4630F /* Badges.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D95517C52E3556B821011A2 /* Badges.swift */; };
 		8ABCE34BFFE6753E4FCAE5DB /* ChallengeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5BF0869800CF40D9BD9265 /* ChallengeModels.swift */; };
 		8F25FE41411A9BFEE96A3D84 /* MediaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4BF9350DFD0A779DA52205 /* MediaModels.swift */; };
@@ -80,10 +84,13 @@
 		9549BB32BDDE8CF9A4982F42 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D586B92BBE5C14B535F56C13 /* ChatViewModel.swift */; };
 		973B6B94EAC0FDCB376F65B9 /* LeaderboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCD60644573229DD07BC7D23 /* LeaderboardViewModel.swift */; };
 		97800792AA29E35CBA88BA33 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F8BA58C2258097F10D4C712 /* LoginView.swift */; };
+		97B71288ABB8606290E1B91B /* CreateBattleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09CB5E8673308360411F4EC /* CreateBattleView.swift */; };
 		992E65545223A7D863EFC66D /* HealthConnector.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE2CD40DE025EFE05E665EF /* HealthConnector.swift */; };
+		99464B9E54CD6F6E97775A27 /* BattleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7CFAB2214D6E4B18C981BCE /* BattleModels.swift */; };
 		A1527D8D982A78EF958E5FE9 /* Shadows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD258E12DAF6CCF60617389 /* Shadows.swift */; };
 		A6CB75EAF14B3966C02288CE /* ProofReviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43E7E93266D48268572ADBA8 /* ProofReviewViewModel.swift */; };
 		A734C8983B2D4E74F323ED76 /* ChallengeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0E6994F249033BD954D4A8 /* ChallengeDetailView.swift */; };
+		A94D56DD83E4D0809AC8824B /* CreateBattleViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249A11BA6268F042E1C1D4C8 /* CreateBattleViewModel.swift */; };
 		ADA70FDD49A2694A7180FFD7 /* CreateFlowComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC5EBED959E61BBF6378C535 /* CreateFlowComponents.swift */; };
 		AEAF8F2DD466EEE36927011B /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F3062FCFADCC75C835D7D47 /* RootView.swift */; };
 		AED3CF19D9ADC0FE511BDFDD /* Archivo-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F4F683E331834B3BBC8A1E80 /* Archivo-ExtraBold.ttf */; };
@@ -91,6 +98,8 @@
 		B36CFF9C35AAA1D3665A308F /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D57E4C7FCA12BA53055EA80 /* AppConfig.swift */; };
 		B3CD249A6F92DE17467A68B8 /* MockAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A631660D3FB6103DE1B4706A /* MockAuthService.swift */; };
 		B52C2B84BE3243339F6E98A2 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ABDCF40AAD1CFB46CCE2289 /* APIError.swift */; };
+		B93D4FF3F18688DE65452EF0 /* BattlesListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BBBD7B41BF05211CEBC3896 /* BattlesListViewModel.swift */; };
+		BA664E80849D88697AEA1865 /* BattlesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347E4D0C766E128114DE2264 /* BattlesService.swift */; };
 		BA687AF6FE2F59FAC615D08A /* FITWARApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58B75F68F96B0614497F344 /* FITWARApp.swift */; };
 		BABD89028399CD7D53AA6B39 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F68ACB7E1D1FFB94482C7E4 /* AppDependencies.swift */; };
 		BAD44AD0F3484AC34307FA34 /* OnboardingProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADFF2E79A1087ED36B9D0518 /* OnboardingProfileView.swift */; };
@@ -162,17 +171,22 @@
 		0F3062FCFADCC75C835D7D47 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		108290D5B91EB55E89CC910C /* VerificationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationModels.swift; sourceTree = "<group>"; };
 		10A8B2FE76FCFE667D497C6D /* OnboardingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewModel.swift; sourceTree = "<group>"; };
+		1337BE4EAE2FB7826666945B /* BattleDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleDetailViewModel.swift; sourceTree = "<group>"; };
 		1863908100F1950DF39A46A3 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
+		197C6D19B3A70F13ED5830DD /* BattleComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleComponents.swift; sourceTree = "<group>"; };
 		19EE639927659ECA60AF314C /* VerifyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifyView.swift; sourceTree = "<group>"; };
 		1A5BF0869800CF40D9BD9265 /* ChallengeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeModels.swift; sourceTree = "<group>"; };
 		2423928138F16625021708EE /* HealthKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitService.swift; sourceTree = "<group>"; };
+		249A11BA6268F042E1C1D4C8 /* CreateBattleViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateBattleViewModel.swift; sourceTree = "<group>"; };
 		24AF0B96CBA46D80B1E4D80D /* LoginViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModel.swift; sourceTree = "<group>"; };
+		28DAB9191B8564AFDBEC67C4 /* BattlesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattlesListView.swift; sourceTree = "<group>"; };
 		29A6C0260BEAB085F1A0D021 /* OnboardingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingUITests.swift; sourceTree = "<group>"; };
 		2EB82B26B1C9E4A7AD0AC2C1 /* HealthKitServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitServiceTests.swift; sourceTree = "<group>"; };
 		2EE588BA1C9C105F5F947BA3 /* Endpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Endpoint.swift; sourceTree = "<group>"; };
 		2FB56C5063F900D10FB10AA5 /* WelcomeLandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeLandingView.swift; sourceTree = "<group>"; };
 		30890678266367278D7732C7 /* APIDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIDecodingTests.swift; sourceTree = "<group>"; };
 		33C29E0197CA42E553D882BA /* Avatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Avatar.swift; sourceTree = "<group>"; };
+		347E4D0C766E128114DE2264 /* BattlesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattlesService.swift; sourceTree = "<group>"; };
 		3851F30A630FD65DEB475EA5 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		3B5656C4B8DFBF14A2EADF97 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
 		3C8EDC66E6F7ED8AEDE4C0D8 /* AuthFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlowView.swift; sourceTree = "<group>"; };
@@ -210,6 +224,7 @@
 		6E19384B29FD650ED73F7BC9 /* StatCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatCard.swift; sourceTree = "<group>"; };
 		6F5385423D88C6F9ECD052F6 /* FITWAR.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FITWAR.entitlements; sourceTree = "<group>"; };
 		6F8BA58C2258097F10D4C712 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		7076A0894621795CD9725444 /* BattleOutcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleOutcomeView.swift; sourceTree = "<group>"; };
 		750B2F2A5CE1F2C7B0122207 /* AuthErrorPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthErrorPresentation.swift; sourceTree = "<group>"; };
 		77FDBA61EC6931F384302013 /* KeychainStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStoreTests.swift; sourceTree = "<group>"; };
 		7B0187588FB7D9D27090E5B7 /* RealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeClient.swift; sourceTree = "<group>"; };
@@ -225,11 +240,11 @@
 		8F68ACB7E1D1FFB94482C7E4 /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
 		8FAE2CBD4196CCB27B00C767 /* LaunchFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchFlowUITests.swift; sourceTree = "<group>"; };
 		8FD258E12DAF6CCF60617389 /* Shadows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shadows.swift; sourceTree = "<group>"; };
-		9057E66E79F99DC50DD15158 /* BattlesPlaceholderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattlesPlaceholderView.swift; sourceTree = "<group>"; };
 		90D6400C122AFC1DB9B60950 /* GroupsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsListView.swift; sourceTree = "<group>"; };
 		939FF89A5BC53A08D09077A8 /* MediaAndChatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaAndChatTests.swift; sourceTree = "<group>"; };
 		96A0E8B61F5917C64A8E07E6 /* VerifyViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifyViewModelTests.swift; sourceTree = "<group>"; };
 		97891C8A0C06B8043D4DF2CC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		9BBBD7B41BF05211CEBC3896 /* BattlesListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattlesListViewModel.swift; sourceTree = "<group>"; };
 		9C2F9398C5A041FA568EDD22 /* GroupComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupComponents.swift; sourceTree = "<group>"; };
 		9E3B9215513682C1570BE675 /* LeaderboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeaderboardView.swift; sourceTree = "<group>"; };
 		A1EB24625E5E62872CFCA1FE /* MediaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaService.swift; sourceTree = "<group>"; };
@@ -241,6 +256,7 @@
 		AC5EBED959E61BBF6378C535 /* CreateFlowComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateFlowComponents.swift; sourceTree = "<group>"; };
 		ADE2CD40DE025EFE05E665EF /* HealthConnector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthConnector.swift; sourceTree = "<group>"; };
 		ADFF2E79A1087ED36B9D0518 /* OnboardingProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingProfileView.swift; sourceTree = "<group>"; };
+		B09CB5E8673308360411F4EC /* CreateBattleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateBattleView.swift; sourceTree = "<group>"; };
 		B101AED7D9857FF559614741 /* GameModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameModelsTests.swift; sourceTree = "<group>"; };
 		B3FDAB608B143382F86574B4 /* RegisterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegisterView.swift; sourceTree = "<group>"; };
 		B8BBC620EED3339B858373D0 /* SectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionHeader.swift; sourceTree = "<group>"; };
@@ -253,6 +269,8 @@
 		BF8EDE689DA607690C35D281 /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
 		C5FBE188D4E4505EC7BDB96F /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		C61DF968FC2ABFB60CD5BDB5 /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
+		C7CFAB2214D6E4B18C981BCE /* BattleModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleModels.swift; sourceTree = "<group>"; };
+		C8A5C8A37D0A0FD7A2A46EC3 /* BattleDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleDetailView.swift; sourceTree = "<group>"; };
 		C8CCAC918D075C2F64417F48 /* ChallengesViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengesViewModelTests.swift; sourceTree = "<group>"; };
 		CD61C15716C558C0BBD35E7F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D1AE9B7C8F62BE6C575D2427 /* FITWARButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FITWARButtons.swift; sourceTree = "<group>"; };
@@ -447,7 +465,14 @@
 		8569BED5374CEFDA8FCFD450 /* Battles */ = {
 			isa = PBXGroup;
 			children = (
-				9057E66E79F99DC50DD15158 /* BattlesPlaceholderView.swift */,
+				197C6D19B3A70F13ED5830DD /* BattleComponents.swift */,
+				C8A5C8A37D0A0FD7A2A46EC3 /* BattleDetailView.swift */,
+				1337BE4EAE2FB7826666945B /* BattleDetailViewModel.swift */,
+				7076A0894621795CD9725444 /* BattleOutcomeView.swift */,
+				28DAB9191B8564AFDBEC67C4 /* BattlesListView.swift */,
+				9BBBD7B41BF05211CEBC3896 /* BattlesListViewModel.swift */,
+				B09CB5E8673308360411F4EC /* CreateBattleView.swift */,
+				249A11BA6268F042E1C1D4C8 /* CreateBattleViewModel.swift */,
 			);
 			path = Battles;
 			sourceTree = "<group>";
@@ -458,6 +483,7 @@
 				F0B0666548E681D726A85DD2 /* APIClient.swift */,
 				0ABDCF40AAD1CFB46CCE2289 /* APIError.swift */,
 				5AB0E13DC5B1787DAAD11187 /* AuthService.swift */,
+				347E4D0C766E128114DE2264 /* BattlesService.swift */,
 				D771A961565DF8E05F5D1EC2 /* ChallengesService.swift */,
 				BF8EDE689DA607690C35D281 /* ChatService.swift */,
 				2EE588BA1C9C105F5F947BA3 /* Endpoint.swift */,
@@ -496,6 +522,7 @@
 			isa = PBXGroup;
 			children = (
 				F1A671918F62881C40380C7B /* AuthModels.swift */,
+				C7CFAB2214D6E4B18C981BCE /* BattleModels.swift */,
 				1A5BF0869800CF40D9BD9265 /* ChallengeModels.swift */,
 				895BE3E2692DCBA02893E3DF /* GameModels.swift */,
 				43D4C67B23D5044918260581 /* GroupModels.swift */,
@@ -805,7 +832,14 @@
 				E4098AE8A189ABDA564407E6 /* AuthService.swift in Sources */,
 				3A06DE1BB1E33A2D8A6F554F /* Avatar.swift in Sources */,
 				85570A7CDDEC1C4FD1C4630F /* Badges.swift in Sources */,
-				112DD657C3FDE56EBCF037EC /* BattlesPlaceholderView.swift in Sources */,
+				4681D5CB92F865BE19C4E8FA /* BattleComponents.swift in Sources */,
+				3531BAC9DCB76A9C0BC2277D /* BattleDetailView.swift in Sources */,
+				274FF713D6A983FFD55020F5 /* BattleDetailViewModel.swift in Sources */,
+				99464B9E54CD6F6E97775A27 /* BattleModels.swift in Sources */,
+				8382E482BF48E07A81389A18 /* BattleOutcomeView.swift in Sources */,
+				5939A5E085E3AAB7DF418234 /* BattlesListView.swift in Sources */,
+				B93D4FF3F18688DE65452EF0 /* BattlesListViewModel.swift in Sources */,
+				BA664E80849D88697AEA1865 /* BattlesService.swift in Sources */,
 				FFBBE6F9ABA6C2D1ACDA973C /* ChallengeCard.swift in Sources */,
 				A734C8983B2D4E74F323ED76 /* ChallengeDetailView.swift in Sources */,
 				5B523CEADCEE8E34FCF69934 /* ChallengeDetailViewModel.swift in Sources */,
@@ -817,6 +851,8 @@
 				49471A426C101C6CFE5ED307 /* ChatView.swift in Sources */,
 				9549BB32BDDE8CF9A4982F42 /* ChatViewModel.swift in Sources */,
 				C516380817B3AED1CB698430 /* ColorTokens.swift in Sources */,
+				97B71288ABB8606290E1B91B /* CreateBattleView.swift in Sources */,
+				A94D56DD83E4D0809AC8824B /* CreateBattleViewModel.swift in Sources */,
 				3E45C9483AB8293025C82659 /* CreateChallengeFlowView.swift in Sources */,
 				FCC99AC96DF9116A8EBA5AB5 /* CreateChallengeViewModel.swift in Sources */,
 				ADA70FDD49A2694A7180FFD7 /* CreateFlowComponents.swift in Sources */,

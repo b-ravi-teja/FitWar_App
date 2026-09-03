@@ -24,6 +24,9 @@ class XPReason(enum.StrEnum):
 
     DAILY_COMPLETION = "daily_completion"
     STREAK_BONUS = "streak_bonus"
+    # Winning a 1v1 (design spec §9 names it in the ledger). Still additive: the loser
+    # is not debited, only left unrewarded (ADR 0002, §20.11).
+    BATTLE_WIN = "battle_win"
 
 
 class XPTransaction(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

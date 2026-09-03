@@ -22,13 +22,19 @@ class ActivityType(enum.StrEnum):
 
 
 class GameMode(enum.StrEnum):
-    """V1 ships SURVIVAL and POINTS only. TOURNAMENT/TEAM/BOSS are "SOON" chips in the
-    design and are deliberately absent from this enum — an unimplemented value that
-    the API would accept is worse than one that fails validation.
+    """V1's three modes (§20.3, design spec §11). TOURNAMENT/TEAM/BOSS are "SOON" chips
+    in the design and are deliberately absent from this enum — an unimplemented value
+    that the API would accept is worse than one that fails validation.
+
+    `ONE_V_ONE` is not selectable on `POST /groups/{id}/challenges`: a 1v1 challenge is
+    the backing record of a `Battle` and is created only through `POST /battles`, so the
+    invitation, the two-participant limit and the finalization can't be bypassed by
+    driving the challenge API directly.
     """
 
     SURVIVAL = "survival"
     POINTS = "points"
+    ONE_V_ONE = "1v1"
 
 
 class VerificationMethod(enum.StrEnum):

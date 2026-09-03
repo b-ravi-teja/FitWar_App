@@ -86,8 +86,19 @@ final class MockRealtimeClient: RealtimeClientProtocol, @unchecked Sendable {
     private(set) var connectCount = 0
     private(set) var disconnectCount = 0
 
+    private(set) var battleConnectCount = 0
+
     func events(groupId: UUID, token: String) -> AsyncStream<RealtimeEvent> {
         connectCount += 1
+        return stream()
+    }
+
+    func events(battleId: UUID, token: String) -> AsyncStream<RealtimeEvent> {
+        battleConnectCount += 1
+        return stream()
+    }
+
+    private func stream() -> AsyncStream<RealtimeEvent> {
         let queued = eventsToEmit
         return AsyncStream { continuation in
             for event in queued { continuation.yield(event) }

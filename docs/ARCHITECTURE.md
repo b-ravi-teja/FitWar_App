@@ -1180,3 +1180,206 @@ read back correctly throughout.
 No inbox screen in V1 (§20.6, unchanged). Phase 6 adds no notification surface; game
 events reach users through the group feed and chat system messages.
 
+
+---
+
+## 24. 1v1 Battles (Phase 7)
+
+### 24.1 A battle is not a second game engine
+
+The single decision this phase turns on: **every `Battle` owns a `Challenge` whose
+`game_mode` is `1V1`, and every `BattleParticipant` has a matching `ChallengeParticipant`.**
+
+That is what the frozen model already requires. §20.3 defines the 1v1 outcome as
+"mirrored onto both `BattleParticipant.status` and the linked `ChallengeParticipant.outcome`",
+which cannot be satisfied without a linked participant; the §4 ERD gives `Battle` a
+mandatory `challenge_id` and `group_id`. Read that way, a battle is a two-player
+*arrangement* around machinery that already exists:
+
+```
+evidence → VerificationProvider (§8, §21)  ← unchanged
+         → VerificationRecord + DailyChallengeProgress (§21)  ← unchanged
+         → GameService.apply_completion — score, streak, per-day XP (§22)  ← unchanged
+         → standings.rank_key — the frozen §20.3 five-step tie-break  ← unchanged
+         → standings.points_outcomes — exactly one WON  ← unchanged
+         → GameService.award_battle_win_xp — the same ledger (§22.3)
+         → BattleParticipant.status + ChallengeParticipant.outcome
+```
+
+`services/battle_service.py` contains no scoring algorithm, no tie-break, no XP formula
+and no HealthKit reference. A change to `rank_key` reaches battles with no battle-side
+work — and a bug in it is a bug in both, which is the point of sharing it. See ADR 0009.
+
+### 24.2 The backing challenge is unreachable through the challenge API
+
+`ChallengeService.get` raises `CHALLENGE_NOT_FOUND` — the same error a made-up id
+produces — for any `1V1` challenge, and `ChallengeRepository` excludes them from every
+listing and from the DRAFT→ACTIVE/ACTIVE→COMPLETED clock sweep.
+
+This is a security boundary, not presentation. Left visible, `POST /challenges/{id}/join`
+would be a way to put a third player into a 1v1, and `POST /challenges/{id}/cancel` a way
+to end someone else's battle. `POST /groups/{id}/challenges` also rejects `game_mode=1v1`:
+a battle is created only through `POST /battles`, so the invitation, the two-player cap
+and the finalization cannot be bypassed.
+
+### 24.3 Lifecycle
+
+Exactly the four frozen states. There is no `expired`: nothing in the architecture
+defines an invitation timeout, so a pending invitation stays pending.
+
+| Battle | Sides | Backing challenge | Trigger |
+|---|---|---|---|
+| `pending` | creator `accepted`, opponent `invited` | `DRAFT` | `POST /battles` |
+| `active` | both `active` | `ACTIVE`, window rewritten to start now | `POST /battles/{id}/accept` |
+| `cancelled` | opponent `declined` | `CANCELLED` | `POST /battles/{id}/decline` |
+| `completed` | one `won`, one `lost` | `COMPLETED` | finalization (§24.6) |
+
+A **declined** invitation writes no outcome on either side. §20.3's `LEFT` describes
+forfeiting a contest that started; a refused invitation started nothing, and recording a
+result for it would put a match that never happened into both players' history.
+
+### 24.4 Who may challenge whom
+
+The frozen rival list is group-scoped, so the rule is "you may challenge someone you
+share a squad with". `POST /battles` takes an optional `group_id`; omitted, the server
+infers it when exactly one squad is shared and answers `GROUP_REQUIRED` when several are
+rather than guessing. "No such user", "that's you" and "you share no squad" all return
+the same `OPPONENT_NOT_AVAILABLE`, so the endpoint is not an account-existence oracle.
+
+The battle's timezone is the group's, snapshotted at creation and never re-read — the
+same freeze-at-creation rule as §11, and the reason the day boundary and the countdown
+are the server's answer rather than the device's.
+
+### 24.5 Two structural invariants
+
+Both are database constraints. Neither is re-checked in service code, because a
+check-then-write is exactly what a race defeats.
+
+- **Exactly two participants.** `battle_participant.slot` is `CHECK (slot IN (1,2))` and
+  `UNIQUE(battle_id, slot)`. A third row has no slot to take. The backing challenge
+  additionally carries `participant_limit = 2`.
+- **One live battle per pair.** `pair_key` is the two user ids sorted and joined;
+  `uq_battle_live_pair` is unique on it `WHERE status IN ('PENDING','ACTIVE')`. Symmetric,
+  so A-invites-B and B-invites-A are the same battle; partial, so history never blocks a
+  rematch. This is what makes `409 ALREADY_PENDING_WITH_USER` a guarantee.
+
+  *The predicate matches the enum **names** (`'PENDING'`), which is how SQLAlchemy
+  persists them. Written against the lowercase API values the index is still created and
+  still unique — it simply never matches a row, and the duplicate it exists to stop sails
+  through silently. It is derived from the enum members rather than typed out.*
+
+### 24.6 Finalization — one transaction, written once
+
+Due when either the battle's window has closed, **or** every day is already resolved
+(`COMPLETED` or `MISSED`) for both players. The second condition is not a different rule:
+once no open day remains, no further evidence can move a score, so waiting for the clock
+would only delay an outcome that is already determined. Both paths run the same code.
+
+Under the battle row's lock, in one transaction:
+
+1. `resolve_overdue_days` — every past-deadline day becomes a miss before anything is compared.
+2. `points_outcomes(standings)` — the frozen §20.3 comparison. Shared verbatim with
+   POINTS-mode challenge close and leaderboard ordering, so a battle's winner can never
+   disagree with its rank.
+3. `ChallengeParticipant.outcome` and `.status` written (once — an outcome already set is
+   never rewritten).
+4. Mirrored onto `BattleParticipant.status`, with `score` snapshotted.
+5. `award_battle_win_xp` to the winner, idempotent by ledger constraint.
+6. `battle.status = completed`, `completed_at` stamped.
+
+A second attempt finds `status != active` and does nothing. **Late evidence is refused,
+not ignored silently**: `POST /battles/{id}/verify` answers `409 BATTLE_NOT_ACTIVE`, and
+the backing challenge is `COMPLETED` so `VerificationService` would refuse it too.
+
+There is no provisional winner. `winner_user_id` is `null` until finalization — a mutable
+"current winner" would be exactly the mutable source of truth the frozen rules forbid.
+
+### 24.7 XP
+
+One ledger, one reason (`battle_win`), reference `('battle', battle.id)`. Idempotent
+through `uq_xp_transaction_idempotency`, and `xp_total` moves only when the insert
+actually happened — the boolean from `ON CONFLICT DO NOTHING` is what decides, so the
+projection can never drift from the ledger. The loser is not debited (ADR 0002); §20.11's
+Defeat screen has no XP block. The amount the Victory screen shows is **read back out of
+the ledger**, not restated from the constant, so a missing award would be visible rather
+than papered over. Amount and rationale: ADR 0009.
+
+### 24.8 Verification — health data only in V1
+
+Battles verify through the existing provider abstraction, and `POST /battles` accepts
+only activities Apple Health can measure. Manual video proof needs a reviewer who is not
+competing, and §20.5's frozen reviewer set (challenge creator + group admins) puts one of
+the two competitors in the chair. Rather than invent an impartial-reviewer rule the
+architecture does not define, V1 restricts battles to the automatic path — consistent
+with the frozen `POST /battles` body, which never carried a `verification_method`.
+Push-up battles are therefore not possible in V1; the client offers only the three
+measurable activities rather than failing later. See ADR 0009 and §31 gaps.
+
+### 24.9 Authorization and privacy
+
+A 1v1 is private to its **two players** — not to its squad. There is no viewer tier.
+
+- `GET /battles` selects through `battle_participant`: a battle you are not in is never
+  selected, not filtered afterwards.
+- Every `/battles/{id}` route goes through one dependency that answers `BATTLE_NOT_FOUND`
+  for a non-participant — byte-identical to a made-up id, because §12 forbids leaking a
+  private battle's existence and ids are not treated as secrets.
+- `WS /ws/battles/{id}` authorizes against `battle_participant`, so a squad-mate is
+  refused with close code 4403, identically to an unknown battle. Authorization does not
+  relax once the battle is over.
+- The battle response carries the opponent's display name, score, banked days and status
+  — the contest — and has no field for evidence, proof media, health records or
+  verification metadata.
+
+### 24.10 Realtime
+
+Reuses Phase 6 wholesale: Redis pub/sub as transport, one channel per battle,
+`_serve` shared with the group gateway so the two cannot drift.
+
+| Event | Channel | Why |
+|---|---|---|
+| `battle_invited` | `group:{id}` | The opponent does not know the battle id yet, so discovery rides the channel they are already on. |
+| `battle_status_changed` | `battle:{id}` + `group:{id}` | Accepted or declined. |
+| `battle_progress` | `battle:{id}` | A side posted evidence. |
+| `battle_completed` | `battle:{id}` + `group:{id}` | Carries `winner_user_id`. |
+
+Payloads carry ids and a status and **no numbers**. That is deliberate: a socket that
+carried scores would be a way around the read authorization, so the only correct client
+response is to re-read over REST — which is also what makes a duplicated event harmless.
+Delivery is not exactly-once; a client that misses everything recovers the full outcome
+on its next `GET /battles/{id}`. With Redis dead, the entire lifecycle still plays
+through (tested).
+
+### 24.11 Concurrency
+
+`SELECT … FOR UPDATE` on the battle row is taken before every acceptance and
+finalization, with `populate_existing` so the lock re-reads the row rather than handing
+back the identity-mapped instance's pre-lock attributes — a lock taken correctly and then
+read stale is not a lock. The same fix was applied to `lock_participant`/`lock_profile`.
+
+Proven against real Postgres on independent connections:
+
+| Race | Result |
+|---|---|
+| 5 simultaneous invitations, same pair | 1 created, 4 × `ALREADY_PENDING_WITH_USER` |
+| A-invites-B and B-invites-A at once | 1 created, 1 refused |
+| 5 simultaneous accepts | 5 × 200, one start instant, exactly 2 challenge participants |
+| Accept and decline at once | Exactly one applies |
+| 3 racing third-participant inserts | All refused by the slot constraint |
+| Both players' final submissions at once | 1 won, 1 lost, 1 win bonus |
+| 10 simultaneous reads of a finalizable battle | One `completed_at`, one win bonus |
+| 5 identical submissions | One day's XP, score credited once |
+| 3 late submissions after finalization | All `409`, result unchanged |
+
+### 24.12 iOS
+
+`BattlesListView` replaces the Phase 2 placeholder. `BattleDetailView` renders the phase
+its view model read from the server, and `BattleOutcomeView` is Victory and Defeat, which
+mirror each other (§20.11).
+
+**The client never decides the result.** `BattleDetailViewModel` maps `status`,
+`my_outcome` and `winner_user_id` onto its phase and never compares the two scores it is
+holding — regression-tested by handing it a battle where the caller scored 100 against
+9,999 and the server says they won, and requiring Victory. The split "vs" bar renders two
+server scores as a ratio and decides nothing; the countdown renders the server's
+`time_remaining_seconds` rather than recomputing it against the device clock.

@@ -26,6 +26,12 @@ MAX_STREAK_BONUS_DAYS = 5
 # starts at 0 XP.
 XP_PER_LEVEL = 500
 
+# Paid once to the winner of a 1v1, on top of whatever the daily completions inside it
+# already earned. Twice a daily completion: winning a head-to-head should read as a
+# bigger deal than one more day, without letting battle spam outrun the daily habit the
+# economy is built to reward. The loser is not debited (ADR 0002). See ADR 0009.
+BATTLE_WIN_XP = 100
+
 
 def completion_xp() -> int:
     return DAILY_COMPLETION_XP
@@ -57,3 +63,7 @@ def xp_into_level(xp_total: int) -> int:
 def xp_to_next_level(xp_total: int) -> int:
     """XP still needed to reach the next level."""
     return XP_PER_LEVEL - xp_into_level(xp_total)
+
+
+def battle_win_xp() -> int:
+    return BATTLE_WIN_XP
