@@ -1,0 +1,92 @@
+# The two periodic jobs (Architecture §35), run from GitHub's scheduler.
+#
+# This exists because Render does not offer cron jobs on its free tier, and both jobs
+# have to run whether or not anyone opens the app — the deadline sweep is what makes a
+# missed day become a warning or an elimination, and media cleanup is what stops proof
+# videos accumulating past their retention window.
+#
+# It is one of TWO options; pick one and disable the other, or the work runs twice.
+# (Twice is harmless — both jobs are idempotent — but it doubles the Redis commands and
+# storage calls, which are the metered resources on the free tiers.)
+#
+#   A. This workflow.        Free. GitHub's scheduler is best-effort and can be delayed
+#                            by several minutes under load, which the 15-minute sweep
+#                            interval absorbs comfortably.
+#   B. The `cron` services   Paid (Render has no free cron). Better isolation, runs
+#      in render.yaml.       inside the deployment rather than from CI, and does not
+#                            put the database URL in Actions.
+#
+# Either way it is the same image and the same entry points a developer runs by hand.
+name: Scheduled jobs
+
+on:
+  schedule:
+    # Deadlines are per-challenge-day boundaries, so every 15 minutes is far finer than
+    # the rule needs while keeping "you were eliminated" close to when it became true.
+    - cron: "*/15 * * * *"
+    # Retention is measured in hours (§33), so hourly is ample.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Which job to run now.
+        required: true
+        type: choice
+        options: [deadline_sweep, media_cleanup]
+
+concurrency:
+  # A sweep that overruns its interval must not be joined by the next one. Both jobs are
+  # safe to overlap, so this is about not wasting quota rather than correctness.
+  group: scheduled-jobs-staging
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Decide which job this run is
+        id: which
+        run: |
+          case "${{ github.event.schedule }}" in
+            "*/15 * * * *") echo "job=deadline_sweep" >> "$GITHUB_OUTPUT" ;;
+            "17 * * * *")   echo "job=media_cleanup"  >> "$GITHUB_OUTPUT" ;;
+            *)              echo "job=${{ inputs.job }}" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run ${{ steps.which.outputs.job }}
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          EMAIL_API_KEY: ${{ secrets.STAGING_EMAIL_API_KEY }}
+          REDIS_URL: ${{ secrets.STAGING_REDIS_URL }}
+          AUTH_JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
+          STORAGE_ENDPOINT_URL: ${{ secrets.STAGING_STORAGE_ENDPOINT_URL }}
+          STORAGE_BUCKET_NAME: ${{ secrets.STAGING_STORAGE_BUCKET_NAME }}
+          STORAGE_ACCESS_KEY_ID: ${{ secrets.STAGING_STORAGE_ACCESS_KEY_ID }}
+          STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STAGING_STORAGE_SECRET_ACCESS_KEY }}
+        run: |
+          # `:main-latest` rather than a digest: these jobs should follow whatever is
+          # currently deployed, and pinning them would leave them running old code after
+          # every deploy. The tag is set by the staging deploy.
+          docker run --rm \
+            -e APP_ENV=staging -e APP_DEBUG=false -e 'APP_CORS_ORIGINS=[]' \
+            -e EMAIL_PROVIDER=resend -e EMAIL_API_KEY \
+            -e DATABASE_URL -e DATABASE_POOL_SIZE=2 -e DATABASE_MAX_OVERFLOW=0 \
+            -e REDIS_URL -e AUTH_JWT_SECRET \
+            -e STORAGE_ENDPOINT_URL -e STORAGE_REGION=auto -e STORAGE_BUCKET_NAME \
+            -e STORAGE_ACCESS_KEY_ID -e STORAGE_SECRET_ACCESS_KEY \
+            -e STORAGE_UPLOAD_METHOD=put \
+            "ghcr.io/${{ github.repository }}/fitwar-backend:staging" \
+            python -m app.workers.${{ steps.which.outputs.job }}
+        # EMAIL_API_KEY is passed because Settings validates the whole configuration at
+        # import; the jobs never send mail.

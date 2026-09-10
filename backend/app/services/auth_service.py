@@ -13,6 +13,7 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.core.security import (
     create_access_token,
@@ -30,12 +31,14 @@ from app.domain.auth.exceptions import (
     ResetTokenInvalidError,
 )
 from app.integrations.email.base import EmailSender
-from app.integrations.email.logging_sender import LoggingEmailSender
+from app.integrations.email.factory import get_email_sender
 from app.models.auth import RefreshToken
 from app.models.user import User, UserStatus
 from app.repositories.password_reset_tokens import PasswordResetTokenRepository
 from app.repositories.refresh_tokens import RefreshTokenRepository
 from app.repositories.users import UserRepository
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -89,7 +92,7 @@ class AuthService:
         self._users = UserRepository(session)
         self._refresh_tokens = RefreshTokenRepository(session)
         self._reset_tokens = reset_tokens or PasswordResetTokenRepository(get_redis())
-        self._email_sender = email_sender or LoggingEmailSender()
+        self._email_sender = email_sender or get_email_sender()
 
     async def register(
         self, *, email: str, password: str, display_name: str
@@ -164,7 +167,15 @@ class AuthService:
             return
         raw_token = generate_refresh_token()  # same high-entropy opaque-token shape
         await self._reset_tokens.store(raw_token=raw_token, user_id=user.id)
-        await self._email_sender.send_password_reset(to=email, token=raw_token)
+        try:
+            await self._email_sender.send_password_reset(to=email, token=raw_token)
+        except Exception:
+            # Swallowed deliberately. Letting a delivery failure become a 500 would make
+            # this endpoint answer differently for an address that exists than for one
+            # that does not — reinstating exactly the enumeration oracle the uniform 202
+            # exists to close. The failure is recorded by the sender, which logs the
+            # cause without the token.
+            logger.warning("password_reset_email_delivery_failed")
 
     async def confirm_password_reset(self, *, token: str, new_password: str) -> None:
         user_id = await self._reset_tokens.consume(token)

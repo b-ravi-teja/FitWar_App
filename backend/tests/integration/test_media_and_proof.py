@@ -650,3 +650,110 @@ class TestReviewDecision:
         assert response.status_code == 409
         xp = (await client.get("/api/v1/me/xp", headers=participant.headers)).json()
         assert xp["xp_total"] == 0
+
+
+class TestR2CompatibleUploads:
+    """Cloudflare R2 does not implement S3 PostObject — its presigned URLs cover
+    GET/PUT/HEAD/DELETE only. An R2 deployment therefore issues PUT grants, which carry
+    no content-length condition, so the size ceiling the POST policy used to enforce has
+    to hold somewhere else.
+
+    MinIO speaks both, which is what makes it possible to test the R2 shape here rather
+    than discovering it against a real bucket after deploying.
+    """
+
+    async def test_a_put_grant_uploads_end_to_end(
+        self, client, register_actor, monkeypatch
+    ) -> None:
+        actor = await register_actor(client, "PutUploader")
+        _use_put_grants(monkeypatch)
+
+        prepared = await client.post(
+            "/api/v1/media/upload-url",
+            json={"content_type": "video/mp4"},
+            headers=actor.headers,
+        )
+        assert prepared.status_code == 201, prepared.text
+        grant = prepared.json()
+
+        assert grant["method"] == "PUT"
+        assert grant["fields"] == {}
+        assert grant["headers"]["Content-Type"] == "video/mp4"
+
+        # Exactly what the iOS client does with a PUT grant: raw body, signed headers.
+        async with httpx.AsyncClient() as raw:
+            put = await raw.put(grant["url"], content=FAKE_VIDEO, headers=grant["headers"])
+        assert put.status_code in (200, 204), put.text
+
+        completed = await client.post(
+            f"/api/v1/media/{grant['media_id']}/complete", headers=actor.headers
+        )
+        assert completed.status_code == 200, completed.text
+        assert completed.json()["size_bytes"] == len(FAKE_VIDEO)
+
+    async def test_an_oversized_object_is_rejected_and_deleted(
+        self, client, register_actor, db_session, monkeypatch
+    ) -> None:
+        """The property the POST policy used to provide, now enforced server-side.
+
+        Without this, a PUT-mode deployment would accept a file of any size: the grant
+        cannot carry a length range, so nothing between the client and the database
+        would ever look at how many bytes actually arrived.
+        """
+        actor = await register_actor(client, "Oversized")
+        _use_put_grants(monkeypatch)
+        # Smaller than the payload below, so this test does not have to upload 250MB to
+        # find out whether the ceiling is checked.
+        monkeypatch.setattr(get_settings().media, "max_proof_bytes", 32)
+
+        prepared = await client.post(
+            "/api/v1/media/upload-url",
+            json={"content_type": "video/mp4"},
+            headers=actor.headers,
+        )
+        grant = prepared.json()
+
+        async with httpx.AsyncClient() as raw:
+            put = await raw.put(
+                grant["url"], content=b"x" * 512, headers=grant["headers"]
+            )
+        assert put.status_code in (200, 204), "storage accepted it — that is the premise"
+
+        completed = await client.post(
+            f"/api/v1/media/{grant['media_id']}/complete", headers=actor.headers
+        )
+        assert completed.status_code == 409, completed.text
+        assert completed.json()["code"] == "MEDIA_TOO_LARGE"
+
+        stored = (
+            await db_session.execute(
+                select(MediaAsset).where(MediaAsset.id == uuid.UUID(grant["media_id"]))
+            )
+        ).scalar_one()
+        assert stored.status is MediaStatus.FAILED
+        # The bytes are gone, not merely disowned: an oversized object left in the
+        # bucket is the exact cost this limit exists to prevent.
+        assert get_object_storage().head(key=stored.storage_key) is None
+
+    async def test_post_grants_remain_the_default(self, client, register_actor) -> None:
+        """MinIO and S3 keep the stronger shape — storage rejects an oversized upload at
+        the edge, so the bytes never land at all."""
+        actor = await register_actor(client, "PostDefault")
+        prepared = await client.post(
+            "/api/v1/media/upload-url",
+            json={"content_type": "video/mp4"},
+            headers=actor.headers,
+        )
+        grant = prepared.json()
+        assert grant["method"] == "POST"
+        assert grant["fields"] != {}
+
+
+def _use_put_grants(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Switch the process-wide storage client to the R2 upload shape.
+
+    The client is an `lru_cache` singleton, so the private attribute is patched directly
+    rather than rebuilding it — monkeypatch restores it, and rebuilding would leak a
+    PUT-mode client into every test that ran afterwards.
+    """
+    monkeypatch.setattr(get_object_storage(), "_upload_method", "put")

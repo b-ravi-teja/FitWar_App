@@ -52,6 +52,8 @@ async def prepare_upload(
         fields=grant.fields,
         expires_in_seconds=grant.expires_in_seconds,
         max_bytes=get_settings().media.max_proof_bytes,
+        method=grant.method,
+        headers=grant.headers,
     )
 
 

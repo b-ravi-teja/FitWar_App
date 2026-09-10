@@ -5,8 +5,11 @@ The security properties this file is responsible for:
 
 - The storage key is **server-generated** and namespaced by owner, so a client can
   neither choose a key nor write over someone else's object.
-- The presigned grant is short-lived and pins content type and maximum size, so limits
-  are enforced by storage rather than merely promised by the client.
+- The presigned grant is short-lived and pins the content type. A POST policy pins the
+  maximum size too, so storage rejects an oversized upload at the edge; a presigned PUT
+  cannot carry a length condition, so `complete_upload` re-checks the stored object's
+  size against the same ceiling. Either way the limit is enforced server-side, never
+  merely promised by the client.
 - The client never receives bucket credentials — only a single-object, expiring grant.
 """
 
@@ -20,6 +23,7 @@ from app.core.logging import get_logger
 from app.domain.media.exceptions import (
     MediaNotFoundError,
     MediaNotReadyError,
+    MediaTooLargeError,
     MediaTypeNotAllowedError,
     MediaUploadNotFoundInStorageError,
 )
@@ -112,6 +116,24 @@ class MediaService:
         size, actual_type = head
         # Trust the object, not the request: the declared type at prepare time is only a
         # promise until there is a real object to inspect.
+        if size > self._settings.max_proof_bytes:
+            # Reachable whenever storage could not enforce the ceiling at ingest — a
+            # presigned PUT carries no content-length condition (R2 has no PostObject).
+            # The object is removed rather than left to retention: it is already known
+            # to be unusable, and it is by definition the largest kind of object there
+            # is. If the delete fails the row still moves to FAILED and the retention
+            # sweep picks the bytes up later, so this never silently keeps them.
+            self._storage.delete(key=asset.storage_key)
+            asset.status = MediaStatus.FAILED
+            asset.size_bytes = size
+            await self._session.flush()
+            logger.warning(
+                "media_upload_rejected_oversized",
+                media_id=str(asset.id),
+                size_bytes=size,
+                max_bytes=self._settings.max_proof_bytes,
+            )
+            raise MediaTooLargeError("That video is too large.")
         asset.size_bytes = size
         if actual_type:
             asset.content_type = actual_type.lower()

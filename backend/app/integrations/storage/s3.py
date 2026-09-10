@@ -1,4 +1,4 @@
-"""S3-compatible storage. MinIO locally, AWS S3 (or any S3 API) in production."""
+"""S3-compatible storage. MinIO locally, AWS S3 or Cloudflare R2 in production."""
 
 from functools import lru_cache
 
@@ -19,15 +19,19 @@ class S3ObjectStorage:
     def __init__(self) -> None:
         settings = get_settings().storage
         self._bucket = settings.bucket_name
+        self._upload_method = settings.upload_method
         self._client = boto3.client(
             "s3",
             endpoint_url=settings.endpoint_url,
             region_name=settings.region,
             aws_access_key_id=settings.access_key_id,
             aws_secret_access_key=settings.secret_access_key.get_secret_value(),
-            # Path-style addressing: MinIO doesn't do virtual-host buckets by default,
-            # and S3 accepts it too, so one config works for both.
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            # Path-style addressing by default: MinIO doesn't do virtual-host buckets,
+            # and S3 and R2 both accept it, so one config works everywhere.
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": settings.addressing_style},
+            ),
         )
 
     def ensure_bucket(self) -> None:
@@ -44,12 +48,40 @@ class S3ObjectStorage:
     def presigned_upload(
         self, *, key: str, content_type: str, max_bytes: int, expires_in: int
     ) -> PresignedUpload:
-        """A POST policy rather than a plain PUT URL.
+        """A single-object write grant, in whichever shape the backend supports.
 
-        The policy pins both the content type and a maximum length, so the size and type
-        limits are enforced by storage itself — not merely promised by the client and
-        checked afterwards.
+        POST is preferred and is the default: its policy pins the content type *and* a
+        content-length range, so storage rejects an oversized or mistyped upload itself
+        and the bytes are never stored.
+
+        PUT exists for Cloudflare R2, which does not implement S3's PostObject — R2
+        presigned URLs cover GET/PUT/HEAD/DELETE only, so there is no policy document to
+        put a length range in. The content type is still signed, so that much remains
+        enforced by storage; the size ceiling moves to `MediaService.complete_upload`,
+        which reads the object back and rejects it if it exceeds `max_bytes`. The
+        difference that leaves is *where* an oversized upload is stopped, not whether:
+        on R2 the bytes land before being rejected and deleted.
         """
+        if self._upload_method == "put":
+            url = self._client.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": self._bucket,
+                    "Key": key,
+                    # Signed, so a client that sends a different type fails the
+                    # signature check rather than storing a mislabelled object.
+                    "ContentType": content_type,
+                },
+                ExpiresIn=expires_in,
+            )
+            return PresignedUpload(
+                url=url,
+                fields={},
+                expires_in_seconds=expires_in,
+                method="PUT",
+                headers={"Content-Type": content_type},
+            )
+
         post = self._client.generate_presigned_post(
             Bucket=self._bucket,
             Key=key,
@@ -61,7 +93,10 @@ class S3ObjectStorage:
             ExpiresIn=expires_in,
         )
         return PresignedUpload(
-            url=post["url"], fields=post["fields"], expires_in_seconds=expires_in
+            url=post["url"],
+            fields=post["fields"],
+            expires_in_seconds=expires_in,
+            method="POST",
         )
 
     def presigned_download(self, *, key: str, expires_in: int) -> str:

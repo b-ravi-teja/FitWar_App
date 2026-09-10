@@ -18,6 +18,18 @@ class MediaNotReadyError(ConflictError):
     code = "MEDIA_NOT_READY"
 
 
+class MediaTooLargeError(ConflictError):
+    """The uploaded object exceeds the configured maximum proof size.
+
+    Only reachable when the storage backend could not enforce the ceiling itself — a
+    POST policy rejects an oversized upload before it is stored, whereas a presigned PUT
+    has no length condition to carry (Cloudflare R2 has no PostObject). The check runs
+    for both, so the limit holds whichever backend is deployed.
+    """
+
+    code = "MEDIA_TOO_LARGE"
+
+
 class MediaUploadNotFoundInStorageError(ConflictError):
     code = "UPLOAD_NOT_FOUND_IN_STORAGE"
 

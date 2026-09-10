@@ -1,0 +1,171 @@
+# staging → production. Never automatic.
+#
+# Manual by design: `workflow_dispatch` only, gated on the GitHub `production`
+# environment's required reviewers. Nothing here builds anything — production deploys
+# the digest that already went through staging, so the artifact being promoted is the
+# one that was tested, byte for byte.
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: >-
+          Image digest to promote (sha256:...). Must be one that passed staging — take it
+          from the `staging-image` artifact of the Deploy staging run you want to ship.
+        required: true
+        type: string
+      confirm:
+        description: Type "deploy to production" to confirm.
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify the promotion request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the confirmation phrase
+        if: inputs.confirm != 'deploy to production'
+        run: |
+          echo "Confirmation phrase did not match." >&2
+          exit 1
+
+      - name: Check the digest is well formed
+        run: |
+          case "${{ inputs.image_digest }}" in
+            sha256:[0-9a-f]*) ;;
+            *) echo "image_digest must be a sha256 digest, not a tag." >&2; exit 1 ;;
+          esac
+
+  deploy:
+    name: Migrate and deploy
+    needs: verify
+    runs-on: ubuntu-latest
+    # Required reviewers are configured on this environment in repository settings.
+    # That approval — not anything in this file — is what actually gates production.
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_API_URL }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the image
+        id: image
+        run: |
+          echo "ref=ghcr.io/${{ github.repository }}/fitwar-backend@${{ inputs.image_digest }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Confirm the image exists
+        # A digest that was garbage-collected or mistyped should fail here, before the
+        # migration runs, not half way through a deploy.
+        run: docker manifest inspect "${{ steps.image.outputs.ref }}" > /dev/null
+
+      - name: Back up the database
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          # Taken immediately before the migration, because the migration is the thing
+          # most likely to need it. See docs/DEPLOYMENT.md § "Migrations that cannot be
+          # rolled back" for when this is the only way back.
+          docker run --rm -e PGSSLMODE=require -e DATABASE_URL \
+            -v "$PWD:/backup" postgres:16-alpine \
+            sh -c 'pg_dump "$DATABASE_URL" > /backup/pre-deploy.sql'
+          echo "Backup size: $(wc -c < pre-deploy.sql) bytes"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pre-deploy-backup-${{ github.run_id }}
+          path: pre-deploy.sql
+          retention-days: 30
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          docker run --rm -e DATABASE_URL \
+            "${{ steps.image.outputs.ref }}" \
+            alembic upgrade head
+
+      - name: Deploy to Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}
+        run: |
+          deploy_id=$(curl -fsS -X POST \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"imageUrl\":\"${{ steps.image.outputs.ref }}\"}" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          echo "deploy_id=$deploy_id" >> "$GITHUB_ENV"
+
+      - name: Wait for the deploy to go live
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}
+        run: |
+          for _ in $(seq 1 60); do
+            status=$(curl -fsS \
+              "https://api.render.com/v1/services/${SERVICE_ID}/deploys/${deploy_id}" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+            echo "  status: $status"
+            case "$status" in
+              live) exit 0 ;;
+              build_failed|update_failed|canceled|pre_deploy_failed)
+                echo "Deploy finished as '$status'" >&2; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "Timed out waiting for the deploy to go live" >&2
+          exit 1
+
+      - name: Health check
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS "${{ vars.PRODUCTION_API_URL }}/health" | grep -q '"status":"healthy"'; then
+              echo "healthy"; exit 0
+            fi
+            sleep 10
+          done
+          echo "Service did not report healthy" >&2
+          exit 1
+
+      - name: Smoke test
+        env:
+          SMOKE_EMAIL: ${{ secrets.PRODUCTION_SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_PASSWORD }}
+        run: |
+          docker run --rm -e SMOKE_EMAIL -e SMOKE_PASSWORD \
+            "${{ steps.image.outputs.ref }}" \
+            python -m scripts.smoke_test "${{ vars.PRODUCTION_API_URL }}"
+
+      - name: Roll back on smoke-test failure
+        if: failure()
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}
+        run: |
+          # Rolls back the APPLICATION only. The database is deliberately left alone:
+          # `alembic downgrade` run automatically is how a failed deploy turns into lost
+          # data, and FITWAR's migrations are additive so the previous image runs against
+          # the migrated schema. A schema rollback is a human decision — see
+          # docs/DEPLOYMENT.md.
+          echo "::warning::Smoke test failed. Rolling back the service; the schema is unchanged."
+          curl -fsS -X POST \
+            "https://api.render.com/v1/services/${SERVICE_ID}/rollback" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" || \
+            echo "::error::Automatic rollback failed — roll back from the Render dashboard."

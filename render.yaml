@@ -1,0 +1,169 @@
+# Render Blueprint — FITWAR staging.
+#
+# Every service here runs the SAME image, pulled from GHCR and pinned by digest at
+# deploy time by .github/workflows/deploy-staging.yml. Render's own repo-building is
+# deliberately not used: it would build the Dockerfile again per service, producing
+# three artifacts from one commit and making "staging and production run the same
+# bytes" impossible to verify.
+#
+# NO SECRETS IN THIS FILE. Everything sensitive is `sync: false`, which tells Render to
+# prompt for the value in the dashboard and keep it out of the repo. The variables set
+# inline are non-secret operational settings that are worth reviewing in a diff.
+
+services:
+  - type: web
+    name: fitwar-api-staging
+    runtime: image
+    plan: free
+    region: oregon
+    image:
+      # Placeholder only. The deploy workflow replaces this with an exact digest —
+      # Render never resolves a moving tag for a real deployment.
+      url: ghcr.io/OWNER/REPO/fitwar-backend:main
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_LOG_LEVEL
+        value: INFO
+      - key: APP_CORS_ORIGINS
+        # The iOS app is not a browser and sends no Origin header, so this stays empty
+        # rather than being widened "just in case". A wildcard here would be rejected by
+        # the production config guard anyway.
+        value: "[]"
+
+      # One worker: the free instance has 512MB, and two uvicorn workers plus their
+      # connection pools do not fit in it comfortably.
+      - key: WEB_CONCURRENCY
+        value: "1"
+
+      # Supabase session-mode pooler. pool_size 5 with no overflow keeps the ceiling at
+      # exactly 5 connections per instance, which is what the free plan's connection
+      # budget can actually absorb alongside migrations and the cron jobs.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_POOL_SIZE
+        value: "5"
+      - key: DATABASE_MAX_OVERFLOW
+        value: "0"
+
+      - key: REDIS_URL
+        sync: false
+
+      - key: AUTH_JWT_SECRET
+        sync: false
+
+      # Render terminates TLS and forwards through exactly one proxy. Leaving this at 0
+      # would make every client look like the proxy and collapse per-IP rate limiting
+      # into a single global bucket; setting it too high would let a client spoof its
+      # own address through X-Forwarded-For.
+      - key: RATE_LIMIT_TRUSTED_PROXY_COUNT
+        value: "1"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: RATE_LIMIT_FAIL_OPEN
+        value: "false"
+
+      # Cloudflare R2. `put` because R2 does not implement S3 PostObject; `auto` is the
+      # only region R2 accepts.
+      - key: STORAGE_ENDPOINT_URL
+        sync: false
+      - key: STORAGE_REGION
+        value: auto
+      - key: STORAGE_BUCKET_NAME
+        sync: false
+      - key: STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: STORAGE_UPLOAD_METHOD
+        value: put
+
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: EMAIL_API_KEY
+        sync: false
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+
+      # The in-process scheduler is off: the two cron services below run the same jobs
+      # on Render's scheduler instead. Leaving it on would run them twice — harmless,
+      # since both are idempotent, but it doubles the work and the log noise.
+      - key: SCHEDULER_DISABLED_JOBS
+        value: '["deadline_sweep","media_cleanup"]'
+
+  # --- Scheduled jobs (Architecture §35) ------------------------------------------
+  # Same image, same entry points a developer runs by hand, so "scheduled" and "run it
+  # manually" cannot drift apart. Both jobs are idempotent, so an overlapping or
+  # repeated run is safe.
+
+  - type: cron
+    name: fitwar-deadline-sweep-staging
+    runtime: image
+    plan: starter
+    region: oregon
+    image:
+      url: ghcr.io/OWNER/REPO/fitwar-backend:main
+    # Every 15 minutes. Deadlines are per-challenge-day boundaries, so this is far finer
+    # than the rule needs while keeping "you were eliminated" close to when it became true.
+    schedule: "*/15 * * * *"
+    dockerCommand: python -m app.workers.deadline_sweep
+    envVars:
+      - fromGroup: fitwar-staging-shared
+
+  - type: cron
+    name: fitwar-media-cleanup-staging
+    runtime: image
+    plan: starter
+    region: oregon
+    image:
+      url: ghcr.io/OWNER/REPO/fitwar-backend:main
+    # Hourly. Retention is measured in hours (§33), so this is ample and keeps the
+    # number of storage calls low.
+    schedule: "17 * * * *"
+    dockerCommand: python -m app.workers.media_cleanup
+    envVars:
+      - fromGroup: fitwar-staging-shared
+
+# The cron services need the same database, Redis, storage and email configuration as
+# the web service. An environment group holds one copy of it instead of three, so the
+# jobs cannot drift onto a different database than the API.
+envVarGroups:
+  - name: fitwar-staging-shared
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_CORS_ORIGINS
+        value: "[]"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_POOL_SIZE
+        value: "2"
+      - key: DATABASE_MAX_OVERFLOW
+        value: "0"
+      - key: REDIS_URL
+        sync: false
+      - key: AUTH_JWT_SECRET
+        sync: false
+      - key: STORAGE_ENDPOINT_URL
+        sync: false
+      - key: STORAGE_REGION
+        value: auto
+      - key: STORAGE_BUCKET_NAME
+        sync: false
+      - key: STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: STORAGE_UPLOAD_METHOD
+        value: put
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: EMAIL_API_KEY
+        sync: false
+      - key: EMAIL_FROM_ADDRESS
+        sync: false

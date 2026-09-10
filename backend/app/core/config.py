@@ -7,23 +7,134 @@ should happen before the app is allowed to accept a single request.
 """
 
 from functools import lru_cache
+from typing import Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# libpq's `sslmode` values, mapped onto the ones asyncpg's `ssl` argument accepts.
+# `allow` has no asyncpg equivalent and is the weaker half of libpq's two "try TLS,
+# fall back" modes, so it maps to `prefer` rather than being dropped.
+_SSLMODE_TO_ASYNCPG_SSL = {
+    "disable": "disable",
+    "allow": "prefer",
+    "prefer": "prefer",
+    "require": "require",
+    "verify-ca": "verify-ca",
+    "verify-full": "verify-full",
+}
+
+# Query parameters libpq understands and asyncpg does not. Left in the URI they reach
+# `asyncpg.connect()` as unexpected keyword arguments and raise `TypeError` on the first
+# connection — a failure that looks nothing like "your connection string has a psql-only
+# option in it". `pgbouncer=true` is Prisma's marker, which managed providers sometimes
+# include in a copy-pasted pooler URI.
+_DROPPED_LIBPQ_PARAMS = frozenset(
+    {
+        "sslrootcert",
+        "sslcert",
+        "sslkey",
+        "channel_binding",
+        "options",
+        "pgbouncer",
+        "application_name",
+        "connect_timeout",
+        "target_session_attrs",
+    }
+)
+
+
+def normalize_asyncpg_dsn(dsn: str) -> str:
+    """Rewrite a libpq-style Postgres URI into one SQLAlchemy's asyncpg dialect accepts.
+
+    Managed Postgres dashboards hand out `postgresql://…?sslmode=require` — psql's
+    syntax. This translates the scheme and the TLS option rather than asking every
+    deployment to hand-edit a string it was told to copy verbatim.
+
+    `sslmode` is translated, never dropped: dropping it would silently downgrade a
+    connection the operator asked to encrypt into a plaintext one, and nothing would
+    report that it happened.
+    """
+    parts = urlsplit(dsn.strip())
+
+    scheme = parts.scheme
+    if scheme in ("postgres", "postgresql"):
+        scheme = "postgresql+asyncpg"
+
+    params: list[tuple[str, str]] = []
+    for key, value in parse_qsl(parts.query, keep_blank_values=True):
+        lowered = key.lower()
+        if lowered == "sslmode":
+            translated = _SSLMODE_TO_ASYNCPG_SSL.get(value.lower())
+            if translated is not None:
+                params.append(("ssl", translated))
+            continue
+        if lowered in _DROPPED_LIBPQ_PARAMS:
+            continue
+        params.append((key, value))
+
+    return urlunsplit(
+        (scheme, parts.netloc, parts.path, urlencode(params), parts.fragment)
+    )
 
 
 class DatabaseSettings(BaseSettings):
+    """Postgres connection, from either a full URI or discrete parts.
+
+    Managed Postgres (Supabase, Neon, RDS) hands out a single connection URI, so
+    `DATABASE_URL` is accepted verbatim and wins when set. Re-typing its five components
+    into separate variables is how a password with a `@` in it silently produces a
+    connection to the wrong host. The discrete variables remain for Compose and CI,
+    where the parts are known and no URI exists to copy.
+    """
+
     model_config = SettingsConfigDict(env_prefix="DATABASE_", env_file=".env.local", extra="ignore")
 
-    host: str
+    # Explicit alias: with `env_prefix="DATABASE_"` a field named `url_override` would
+    # otherwise read DATABASE_URL_OVERRIDE, and `url` is taken by the property below.
+    url_override: str | None = Field(default=None, validation_alias="DATABASE_URL")
+
+    host: str | None = None
     port: int = 5432
-    user: str
-    password: SecretStr
-    name: str
+    user: str | None = None
+    password: SecretStr | None = None
+    name: str | None = None
+
     pool_size: int = 5
+    # Connections the pool may open *beyond* pool_size under load. Managed Postgres
+    # bills and caps by connection count, so a deployment behind a shared pooler sets
+    # this to 0 to make the ceiling exactly pool_size instead of pool_size + 10.
+    max_overflow: int = 10
+
+    # asyncpg prepares statements by default, which a connection pooler in *transaction*
+    # mode cannot support — the prepared statement is created on one backend and reused
+    # on another, surfacing as `InvalidSQLStatementNameError` under concurrency rather
+    # than at startup. Session-mode pooling and direct connections are unaffected, so
+    # this stays off; it is the escape hatch for a deployment that has no session-mode
+    # option. See docs/DEPLOYMENT.md.
+    disable_prepared_statements: bool = False
+
+    @model_validator(mode="after")
+    def _require_a_connection_source(self) -> "DatabaseSettings":
+        if self.url_override:
+            return self
+        missing = [
+            f"DATABASE_{part.upper()}"
+            for part in ("host", "user", "password", "name")
+            if getattr(self, part) is None
+        ]
+        if missing:
+            raise ValueError(
+                "Set DATABASE_URL, or all of " + ", ".join(missing) + "."
+            )
+        return self
 
     @property
     def url(self) -> str:
+        if self.url_override:
+            return normalize_asyncpg_dsn(self.url_override)
+        assert self.password is not None  # guaranteed by _require_a_connection_source
         return (
             f"postgresql+asyncpg://{self.user}:{self.password.get_secret_value()}"
             f"@{self.host}:{self.port}/{self.name}"
@@ -50,7 +161,7 @@ class AuthSettings(BaseSettings):
 
 
 class StorageSettings(BaseSettings):
-    """S3-compatible object storage config. Not wired to any endpoint until the Media phase."""
+    """S3-compatible object storage config (MinIO locally, AWS S3 or Cloudflare R2 deployed)."""
 
     model_config = SettingsConfigDict(env_prefix="STORAGE_", env_file=".env.local", extra="ignore")
 
@@ -59,6 +170,42 @@ class StorageSettings(BaseSettings):
     bucket_name: str
     access_key_id: str
     secret_access_key: SecretStr
+
+    # How a client uploads: a policy-signed multipart POST, or a signed PUT.
+    #
+    # POST is the better of the two and stays the default — its policy pins a
+    # content-length range, so storage rejects an oversized upload at the edge and the
+    # bytes are never stored. R2 does not implement S3 PostObject (its presigned URLs
+    # are GET/PUT/HEAD/DELETE only), so an R2 deployment sets this to "put" and the
+    # size ceiling is enforced by the server at complete-upload instead. That check runs
+    # for both modes — see `MediaService.complete_upload`.
+    upload_method: Literal["post", "put"] = "post"
+
+    # Virtual-host addressing puts the bucket in the hostname; path-style puts it in the
+    # path. MinIO needs path-style, S3 and R2 accept either, so path-style is the default
+    # that works everywhere.
+    addressing_style: Literal["path", "virtual"] = "path"
+
+
+class EmailSettings(BaseSettings):
+    """Transactional email (ADR 0007). FITWAR sends exactly one kind: the password-reset
+    code.
+
+    `logging` is the local default and writes the code to the log instead of sending it —
+    `LoggingEmailSender` refuses to construct in a production environment, so a staging
+    deployment that forgets to set a provider fails loudly instead of quietly writing
+    live reset tokens into a log stream.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EMAIL_", env_file=".env.local", extra="ignore")
+
+    provider: Literal["logging", "resend"] = "logging"
+    api_key: SecretStr | None = None
+    # Must be an address on a domain verified with the provider, or delivery is refused.
+    from_address: str = "FITWAR <onboarding@resend.dev>"
+    # Short: the caller holds a request open while this runs, and a slow provider must
+    # not become a slow API.
+    timeout_seconds: float = 10.0
 
 
 # Environments that must not run with development affordances enabled.
@@ -193,6 +340,7 @@ class Settings:
         self.redis = RedisSettings()
         self.auth = AuthSettings()
         self.storage = StorageSettings()
+        self.email = EmailSettings()
         self.media = MediaSettings()
         self.app = ApplicationSettings()
         self.rate_limit = RateLimitSettings()
@@ -239,6 +387,12 @@ class Settings:
         if "*" in self.app.cors_origins:
             problems.append(
                 "APP_CORS_ORIGINS must list real origins; '*' with credentials is invalid."
+            )
+
+        if self.email.provider == "logging":
+            problems.append(
+                "EMAIL_PROVIDER must name a real provider outside local development — "
+                "the logging sender writes password-reset codes to the log."
             )
 
         if self.rate_limit.enabled and self.rate_limit.fail_open:

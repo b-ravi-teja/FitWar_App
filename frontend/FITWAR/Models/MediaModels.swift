@@ -16,6 +16,42 @@ struct PresignedUpload: Decodable, Sendable, Equatable {
     let fields: [String: String]
     let expiresInSeconds: Int
     let maxBytes: Int
+    /// `"POST"` (multipart form carrying `fields`) or `"PUT"` (raw body plus `headers`).
+    /// Which one arrives depends on the deployed storage backend — Cloudflare R2 has no
+    /// S3 PostObject, so an R2 deployment issues PUT grants. Defaulted so a response
+    /// from a server predating the field still decodes.
+    let method: String
+    /// Headers to apply verbatim to a PUT grant. Empty for POST.
+    let headers: [String: String]
+
+    private enum CodingKeys: String, CodingKey {
+        case mediaId, url, fields, expiresInSeconds, maxBytes, method, headers
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mediaId = try c.decode(UUID.self, forKey: .mediaId)
+        url = try c.decode(String.self, forKey: .url)
+        fields = try c.decodeIfPresent([String: String].self, forKey: .fields) ?? [:]
+        expiresInSeconds = try c.decode(Int.self, forKey: .expiresInSeconds)
+        maxBytes = try c.decode(Int.self, forKey: .maxBytes)
+        method = (try c.decodeIfPresent(String.self, forKey: .method) ?? "POST").uppercased()
+        headers = try c.decodeIfPresent([String: String].self, forKey: .headers) ?? [:]
+    }
+
+    /// Test/preview seam — the decoder above is the only path used in the app.
+    init(
+        mediaId: UUID, url: String, fields: [String: String], expiresInSeconds: Int,
+        maxBytes: Int, method: String = "POST", headers: [String: String] = [:]
+    ) {
+        self.mediaId = mediaId
+        self.url = url
+        self.fields = fields
+        self.expiresInSeconds = expiresInSeconds
+        self.maxBytes = maxBytes
+        self.method = method.uppercased()
+        self.headers = headers
+    }
 }
 
 struct MediaAsset: Decodable, Sendable, Equatable {

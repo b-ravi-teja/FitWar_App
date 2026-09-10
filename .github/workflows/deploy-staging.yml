@@ -1,0 +1,147 @@
+# main → staging. Runs on every push to main that passes CI.
+#
+# The migration runs BEFORE the new image is deployed, not after. Phase M of the brief
+# ordered it the other way; that ordering leaves the new code running against the old
+# schema for the length of the deploy, which is precisely the window a migration exists
+# to avoid. Migrating first is safe because FITWAR's migrations are additive
+# (docs/DEPLOYMENT.md § "Migration strategy"): the old code keeps working against the
+# new schema, so there is no version of this sequence where something is broken.
+name: Deploy staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Never two deploys to one environment at once. `cancel-in-progress: false` because
+  # cancelling half-way through a migration is worse than queueing.
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    # The gate. Deploy jobs depend on this, so a failing test suite means nothing
+    # reaches staging — and it is *this* commit's CI, not an earlier green run.
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      packages: write
+
+  deploy:
+    name: Migrate and deploy
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_API_URL }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the image digest
+        id: image
+        # By digest, not by tag. A tag can be moved; a digest is the artifact. This is
+        # what makes "production runs exactly what staging tested" checkable rather
+        # than assumed.
+        run: |
+          echo "ref=ghcr.io/${{ github.repository }}/fitwar-backend@${{ needs.ci.outputs.image_digest }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          # The deployed artifact runs its own migrations. Alembic installed separately
+          # on the runner could be a different version than the image ships, which is a
+          # way to apply a migration with tooling nothing ever tested.
+          docker run --rm -e DATABASE_URL \
+            "${{ steps.image.outputs.ref }}" \
+            alembic upgrade head
+
+      - name: Deploy to Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
+        run: |
+          deploy_id=$(curl -fsS -X POST \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"imageUrl\":\"${{ steps.image.outputs.ref }}\"}" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          echo "Render deploy $deploy_id"
+          echo "deploy_id=$deploy_id" >> "$GITHUB_ENV"
+
+      - name: Wait for the deploy to go live
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
+        run: |
+          for _ in $(seq 1 60); do
+            status=$(curl -fsS \
+              "https://api.render.com/v1/services/${SERVICE_ID}/deploys/${deploy_id}" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+            echo "  status: $status"
+            case "$status" in
+              live) exit 0 ;;
+              build_failed|update_failed|canceled|pre_deploy_failed)
+                echo "Deploy finished as '$status'" >&2; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "Timed out waiting for the deploy to go live" >&2
+          exit 1
+
+      - name: Wait for the service to report healthy
+        # Render calls a deploy live once the health check passes once. This confirms it
+        # from outside, through the public hostname and its TLS — which is the thing a
+        # phone will actually talk to.
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS "${{ vars.STAGING_API_URL }}/health" | grep -q '"status":"healthy"'; then
+              echo "healthy"; exit 0
+            fi
+            sleep 10
+          done
+          echo "Service did not report healthy" >&2
+          curl -sS -i "${{ vars.STAGING_API_URL }}/health" >&2 || true
+          exit 1
+
+      - name: Smoke test
+        env:
+          SMOKE_EMAIL: ${{ secrets.STAGING_SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}
+        run: |
+          docker run --rm -e SMOKE_EMAIL -e SMOKE_PASSWORD \
+            "${{ steps.image.outputs.ref }}" \
+            python -m scripts.smoke_test "${{ vars.STAGING_API_URL }}"
+
+      - name: Tag the image as :staging
+        # A moving tag pointing at whatever staging currently runs. Deployments use the
+        # digest; only the scheduled jobs follow this, because they should track the
+        # deployed code rather than stay pinned to the commit that first shipped them.
+        run: |
+          docker buildx imagetools create \
+            --tag "ghcr.io/${{ github.repository }}/fitwar-backend:staging" \
+            "${{ steps.image.outputs.ref }}"
+
+      - name: Record the artifact that passed staging
+        # Read by deploy-production.yml, so promotion can only ever offer a digest that
+        # actually got through the steps above.
+        run: |
+          echo "${{ steps.image.outputs.ref }}" > staging-image.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-image
+          path: staging-image.txt
+          retention-days: 90

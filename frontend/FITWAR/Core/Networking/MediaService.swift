@@ -31,10 +31,43 @@ struct MediaService: MediaServiceProtocol {
     }
 
     func uploadData(_ data: Data, to grant: PresignedUpload, contentType: String) async throws {
-        // A multipart POST to storage, carrying the signed policy fields verbatim. The
-        // policy pins the content type and a size ceiling, so storage rejects an
-        // oversized or mistyped upload without the API ever seeing the bytes.
+        // Straight to storage either way; the API never sees the bytes. Which shape the
+        // grant takes is the server's choice, because S3 implementations disagree:
+        // MinIO and S3 take a policy-signed multipart POST, R2 has no PostObject at all
+        // and takes a signed PUT.
         guard let url = URL(string: grant.url) else { throw APIError.unknown("Bad upload URL.") }
+
+        let (request, body) = grant.method == "PUT"
+            ? putRequest(url: url, grant: grant, data: data)
+            : multipartPostRequest(url: url, grant: grant, data: data, contentType: contentType)
+
+        let (_, response) = try await URLSession.shared.upload(for: request, from: body)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            // 403 here is usually storage rejecting size or type — surfaced as a
+            // product error, never as raw storage XML.
+            throw APIError.unknown("Upload rejected by storage (\(code)).")
+        }
+    }
+
+    /// The signed headers are applied verbatim: they are part of what was signed, so
+    /// changing or omitting one makes storage reject the request.
+    private func putRequest(
+        url: URL, grant: PresignedUpload, data: Data
+    ) -> (URLRequest, Data) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        for (key, value) in grant.headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        return (request, data)
+    }
+
+    /// The policy pins the content type and a size ceiling, so storage rejects an
+    /// oversized or mistyped upload at the edge.
+    private func multipartPostRequest(
+        url: URL, grant: PresignedUpload, data: Data, contentType: String
+    ) -> (URLRequest, Data) {
         let boundary = "fitwar-\(UUID().uuidString)"
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -49,14 +82,7 @@ struct MediaService: MediaServiceProtocol {
         append("Content-Type: \(contentType)\r\n\r\n")
         body.append(data)
         append("\r\n--\(boundary)--\r\n")
-
-        let (_, response) = try await URLSession.shared.upload(for: request, from: body)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            // 403 here is usually the policy rejecting size or type — surfaced as a
-            // product error, never as raw storage XML.
-            throw APIError.unknown("Upload rejected by storage (\(code)).")
-        }
+        return (request, body)
     }
 
     func completeUpload(mediaId: UUID) async throws -> MediaAsset {

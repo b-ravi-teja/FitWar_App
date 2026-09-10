@@ -17,6 +17,25 @@ struct Phase6DecodingTests {
         #expect(grant.expiresInSeconds == 900)
     }
 
+    /// A grant with no `method` is the POST shape. Servers deployed before the field
+    /// existed send exactly this, and the app must keep uploading against them.
+    @Test func aGrantWithoutAMethodDefaultsToPost() throws {
+        let grant = try decode(PresignedUpload.self, Self.grantJSON)
+
+        #expect(grant.method == "POST")
+        #expect(grant.headers.isEmpty)
+    }
+
+    /// The Cloudflare R2 shape: no policy fields, and the signed headers the PUT must
+    /// carry. R2 has no S3 PostObject, so an R2 deployment only ever issues these.
+    @Test func decodesAPutGrant() throws {
+        let grant = try decode(PresignedUpload.self, Self.putGrantJSON)
+
+        #expect(grant.method == "PUT")
+        #expect(grant.fields.isEmpty)
+        #expect(grant.headers["Content-Type"] == "video/mp4")
+    }
+
     @Test func decodesAProcessedAsset() throws {
         let asset = try decode(MediaAsset.self, Self.processedJSON)
 
@@ -71,6 +90,14 @@ struct Phase6DecodingTests {
         #expect(reaction.count == 2)
         #expect(reaction.reactedByMe)
     }
+
+    private static let putGrantJSON = """
+    {"media_id":"aa000000-0000-0000-0000-000000000002",
+     "url":"https://acct.r2.cloudflarestorage.com/fitwar-media/verification_proof/u/x.mp4?X-Amz-Signature=abc",
+     "fields":{},
+     "expires_in_seconds":900,"max_bytes":262144000,
+     "method":"PUT","headers":{"Content-Type":"video/mp4"}}
+    """
 
     private static let grantJSON = """
     {"media_id":"aa000000-0000-0000-0000-000000000001",

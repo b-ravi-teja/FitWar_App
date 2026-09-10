@@ -1,2 +1,7 @@
-// TODO: point at the deployed production API once one exists.
+// Production API.
+//
+// ⚠️ REPLACE `fitwar.app.example` WITH THE REAL DOMAIN before shipping. `AppConfig`
+// refuses to launch a non-Debug build that still points at a `.example` host, so a
+// TestFlight build made from this file as-is will crash on launch rather than silently
+// talking to nothing.
 API_BASE_URL = https:/$()/api.fitwar.app.example

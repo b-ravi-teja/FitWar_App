@@ -1,3 +1,10 @@
-// TODO: point at the deployed staging API once one exists (Architecture §15 —
-// per-environment isolation: staging never shares a database/bucket with prod).
+// Staging API (Architecture §15 — per-environment isolation: staging never shares a
+// database, Redis instance or bucket with production).
+//
+// ⚠️ REPLACE `fitwar.app.example` WITH THE REAL DOMAIN before building this
+// configuration. `AppConfig` refuses to launch a non-Debug build that still points at a
+// `.example` host, so this fails loudly rather than shipping a broken build.
+//
+// WebSockets follow automatically: `RealtimeClient` derives wss:// from an https base
+// URL, so there is no second URL to keep in sync.
 API_BASE_URL = https:/$()/staging-api.fitwar.app.example

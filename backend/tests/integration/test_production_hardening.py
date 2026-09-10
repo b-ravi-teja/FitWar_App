@@ -316,6 +316,19 @@ class TestProductionConfigGuard:
         with pytest.raises(UnsafeProductionConfigError, match="CORS"):
             Settings()
 
+    def test_production_refuses_the_logging_email_sender(self, monkeypatch) -> None:
+        """Deployment hardening: without a provider, `POST /auth/password-reset/request`
+        would fall back to the sender that writes the reset code to the log."""
+        from app.core.config import Settings, UnsafeProductionConfigError
+
+        monkeypatch.setenv("APP_ENV", "production")
+        monkeypatch.setenv("APP_DEBUG", "false")
+        monkeypatch.setenv("AUTH_JWT_SECRET", "g" * 64)
+        monkeypatch.setenv("EMAIL_PROVIDER", "logging")
+
+        with pytest.raises(UnsafeProductionConfigError, match="EMAIL_PROVIDER"):
+            Settings()
+
     def test_a_correctly_configured_production_env_boots(self, monkeypatch) -> None:
         from app.core.config import Settings
 
@@ -325,6 +338,8 @@ class TestProductionConfigGuard:
         monkeypatch.setenv("APP_CORS_ORIGINS", '["https://app.fitwar.example"]')
         monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
         monkeypatch.setenv("RATE_LIMIT_FAIL_OPEN", "false")
+        monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+        monkeypatch.setenv("EMAIL_API_KEY", "not-a-real-key")
 
         settings = Settings()
         assert settings.app.is_production
@@ -542,6 +557,11 @@ class TestDevEmailSenderCannotRunInProduction:
         monkeypatch.setenv("APP_ENV", "production")
         monkeypatch.setenv("APP_DEBUG", "false")
         monkeypatch.setenv("AUTH_JWT_SECRET", "a" * 64)
+        # A real provider, so `Settings()` itself constructs — this test is about the
+        # sender's own refusal, which has to hold even when it is reached by some route
+        # the config guard did not anticipate.
+        monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+        monkeypatch.setenv("EMAIL_API_KEY", "not-a-real-key")
         # `get_settings` is process-cached (correct in production, where env is fixed at
         # boot), so the cache has to be dropped for the env above to take effect.
         get_settings.cache_clear()

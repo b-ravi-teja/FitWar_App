@@ -32,12 +32,27 @@ class Base(DeclarativeBase):
 
 
 def create_engine() -> AsyncEngine:
-    settings = get_settings()
+    db = get_settings().database
+    url = db.url
+    kwargs: dict[str, Any] = {}
+    if db.disable_prepared_statements:
+        # Two caches with two owners: asyncpg's own (`statement_cache_size`, a connect
+        # argument) and SQLAlchemy's dialect-level one (`prepared_statement_cache_size`,
+        # read off the URL by the dialect and never forwarded to asyncpg). A
+        # transaction-mode pooler needs both off — leaving either on still hands a
+        # prepared statement to a backend that never prepared it.
+        kwargs["connect_args"] = {"statement_cache_size": 0}
+        url = f"{url}{'&' if '?' in url else '?'}prepared_statement_cache_size=0"
     return create_async_engine(
-        settings.database.url,
-        pool_size=settings.database.pool_size,
+        url,
+        pool_size=db.pool_size,
+        # Managed Postgres caps and bills by connection count, so the real ceiling is
+        # pool_size + max_overflow, not pool_size. A deployment behind a shared pooler
+        # sets max_overflow=0 to make those the same number.
+        max_overflow=db.max_overflow,
         pool_pre_ping=True,
         echo=False,
+        **kwargs,
     )
 
 

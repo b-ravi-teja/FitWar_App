@@ -18,13 +18,24 @@ class PrepareUploadRequest(BaseModel):
 
 class PresignedUploadResponse(BaseModel):
     """A single-object, expiring write grant. The client never holds bucket credentials
-    (§34) — `fields` are the signed POST-policy fields, posted verbatim to `url`."""
+    (§34).
+
+    `method` says which of the two upload shapes this grant is. `POST`: send a multipart
+    form to `url` carrying every entry of `fields` verbatim, plus the file. `PUT`: send
+    the bytes as the request body with `headers` applied and no form encoding — the shape
+    Cloudflare R2 requires, since it does not implement S3 PostObject.
+
+    Both default to the POST shape so a client written before `method` existed keeps
+    working against a POST-mode deployment unchanged.
+    """
 
     media_id: uuid.UUID
     url: str
     fields: dict[str, str]
     expires_in_seconds: int
     max_bytes: int
+    method: str = "POST"
+    headers: dict[str, str] = Field(default_factory=dict)
 
 
 class MediaAssetResponse(BaseModel):
