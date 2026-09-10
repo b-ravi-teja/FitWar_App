@@ -59,7 +59,12 @@ final class MockAuthService: AuthServiceProtocol, @unchecked Sendable {
 final class MockUserService: UserServiceProtocol, @unchecked Sendable {
     var fetchResult: Result<User, Error> = .failure(APIError.unknown("not configured"))
     var updateResult: Result<User, Error> = .failure(APIError.unknown("not configured"))
+    var onboardingResult: Result<User, Error>?
     private(set) var fetchCallCount = 0
+    private(set) var updatedDisplayNames: [String] = []
+    /// Every stage written to the server, in order. Onboarding tests assert on this:
+    /// progress that is not persisted is progress the user loses when they quit.
+    private(set) var recordedStages: [OnboardingStage] = []
 
     func fetchCurrentUser() async throws -> User {
         fetchCallCount += 1
@@ -67,7 +72,35 @@ final class MockUserService: UserServiceProtocol, @unchecked Sendable {
     }
 
     func updateDisplayName(_ displayName: String) async throws -> User {
-        try updateResult.get()
+        updatedDisplayNames.append(displayName)
+        return try updateResult.get()
+    }
+
+    func updateOnboardingStage(_ stage: OnboardingStage) async throws -> User {
+        recordedStages.append(stage)
+        return try (onboardingResult ?? updateResult).get()
+    }
+}
+
+/// Builders for `User`, so a test states only the field it is about.
+enum UserFixtures {
+    static func user(
+        id: UUID = UUID(),
+        displayName: String = "Ravi",
+        xpTotal: Int = 0,
+        onboardingStage: OnboardingStage = .completed,
+        onboardingCompletedAt: Date? = Date(timeIntervalSince1970: 1_760_000_000)
+    ) -> User {
+        User(
+            id: id,
+            email: "ravi@example.com",
+            displayName: displayName,
+            avatarMediaId: nil,
+            xpTotal: xpTotal,
+            notificationPreferences: nil,
+            onboardingStage: onboardingStage,
+            onboardingCompletedAt: onboardingStage == .completed ? onboardingCompletedAt : nil
+        )
     }
 }
 

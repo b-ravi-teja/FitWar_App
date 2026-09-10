@@ -1,8 +1,13 @@
 import SwiftUI
 
 /// Navigation coordinator for the logged-out flow: Login is the root, Register
-/// pushes from it. `onRegistered` bubbles up to `RootView` so it knows to route
-/// through onboarding next (this phase's §12).
+/// pushes from it.
+///
+/// It deliberately no longer signals "just registered" upward. That callback fired from
+/// an `.onChange` on a view `RootView` replaces the moment the session authenticates, so
+/// it raced its own teardown and lost — onboarding was skipped for every new account.
+/// Whether a user needs onboarding is now read from the server (`AppRouteViewModel`),
+/// which is also the only version that survives reinstall and logout/login.
 private enum AuthRoute: Hashable {
     case login
     case register
@@ -11,7 +16,6 @@ private enum AuthRoute: Hashable {
 struct AuthFlowView: View {
     @Environment(SessionManager.self) private var sessionManager
     @State private var path = NavigationPath()
-    var onRegistered: () -> Void
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -31,12 +35,6 @@ struct AuthFlowView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-        }
-        .onChange(of: sessionManager.state) { _, newState in
-            if case .authenticated = newState, !path.isEmpty {
-                // Registration just succeeded from the pushed Register screen.
-                onRegistered()
-            }
         }
     }
 }

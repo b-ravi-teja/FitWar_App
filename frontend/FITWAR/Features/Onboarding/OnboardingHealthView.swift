@@ -1,8 +1,11 @@
 import SwiftUI
 
-/// `ob3` from the prototype. Both connect buttons just advance the flow (§15 — no
-/// real HealthKit call yet, no fake Health Connect behavior); "Skip for now" does
-/// the same thing, matching the prototype's own demo wiring exactly.
+/// `ob3` from the prototype, now wired to the real Phase 4 `HealthKitService`.
+///
+/// The Health Connect button is gone. It is the Android provider, never implemented on
+/// iOS (Architecture §21), and the prototype only ever wired it to "continue" — shipping
+/// a button that cannot do anything is the same mistake §20.8 refused for Sign in with
+/// Apple. Apple Health and an honest skip are the two real choices on this platform.
 struct OnboardingHealthView: View {
     var viewModel: OnboardingViewModel
 
@@ -11,7 +14,9 @@ struct OnboardingHealthView: View {
             SectionHeader(
                 eyebrow: "STEP 2/3",
                 title: "Connect health data",
-                subtitle: "Eligible activity is verified automatically. We read the metric for your active challenge — nothing else."
+                subtitle: viewModel.isHealthAvailable
+                    ? "Eligible activity is verified automatically. We read the metric for your active challenge — nothing else."
+                    : "This device can't provide health data. You can still compete — those challenges are verified by video proof instead."
             )
 
             VStack(spacing: 0) {
@@ -29,13 +34,20 @@ struct OnboardingHealthView: View {
             Spacer()
 
             VStack(spacing: FWSpacing.sm + 2) {
-                FITWARPrimaryButton(title: "CONNECT APPLE HEALTH") {
-                    Task { await viewModel.connectHealth(.appleHealth) }
+                if viewModel.isHealthAvailable {
+                    FITWARPrimaryButton(title: "CONNECT APPLE HEALTH") {
+                        Task { await viewModel.connectHealth() }
+                    }
+                    .disabled(viewModel.isSubmitting)
+                    FITWARTextButton(title: "Skip for now") {
+                        Task { await viewModel.skipHealth() }
+                    }
+                } else {
+                    FITWARPrimaryButton(title: "CONTINUE") {
+                        Task { await viewModel.skipHealth() }
+                    }
+                    .disabled(viewModel.isSubmitting)
                 }
-                FITWARSecondaryButton(title: "CONNECT HEALTH CONNECT") {
-                    Task { await viewModel.connectHealth(.healthConnect) }
-                }
-                FITWARTextButton(title: "Skip for now", action: viewModel.skipHealth)
             }
         }
         .padding(.horizontal, FWSpacing.screenHorizontal)

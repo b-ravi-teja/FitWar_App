@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.user import User, UserProfile, UserStatus
+from app.models.user import OnboardingStage, User, UserProfile, UserStatus
 
 
 class UserRepository:
@@ -30,7 +30,12 @@ class UserRepository:
 
     async def create(self, *, email: str, password_hash: str, display_name: str) -> User:
         user = User(email=email, password_hash=password_hash)
-        user.profile = UserProfile(display_name=display_name)
+        # A brand-new account starts at the first onboarding step. The column defaults to
+        # COMPLETED so that any row created by another path (or backfilled) is never
+        # dragged back through onboarding — only registration opts a user in.
+        user.profile = UserProfile(
+            display_name=display_name, onboarding_stage=OnboardingStage.DISCIPLINE
+        )
         self._session.add(user)
         await self._session.flush()
         return user
@@ -50,9 +55,20 @@ class UserRepository:
         *,
         display_name: str | None = None,
         notification_preferences: dict[str, Any] | None = None,
+        onboarding_stage: OnboardingStage | None = None,
     ) -> None:
         if display_name is not None:
             user.profile.display_name = display_name
         if notification_preferences is not None:
             user.profile.notification_preferences = notification_preferences
+        if onboarding_stage is not None:
+            user.profile.onboarding_stage = onboarding_stage
+            # Stamped once, when onboarding actually finishes. Re-sending COMPLETED is
+            # idempotent and does not move the timestamp, so a retried request can't
+            # rewrite when the user finished.
+            if (
+                onboarding_stage is OnboardingStage.COMPLETED
+                and user.profile.onboarding_completed_at is None
+            ):
+                user.profile.onboarding_completed_at = datetime.now(UTC)
         await self._session.flush()

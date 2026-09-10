@@ -25,6 +25,46 @@ final class MockGameService: GameServiceProtocol, @unchecked Sendable {
 }
 
 enum GameFixtures {
+    static func gameState(
+        challengeId: UUID = UUID(),
+        rank: Int? = 2,
+        score: Decimal = 12_000,
+        currentStreak: Int = 3,
+        status: ParticipantStatus = .active,
+        warnings: [ChallengeWarning] = []
+    ) -> MyChallengeGameState {
+        MyChallengeGameState(
+            challengeId: challengeId,
+            rank: rank,
+            score: score,
+            currentStreak: currentStreak,
+            longestStreak: max(currentStreak, 3),
+            consecutiveMisses: warnings.count,
+            status: status,
+            outcome: nil,
+            warnings: warnings,
+            eliminatedAt: status == .eliminated ? Date(timeIntervalSince1970: 1_760_000_000) : nil
+        )
+    }
+
+    static func warning() -> ChallengeWarning {
+        ChallengeWarning(
+            challengeDay: Date(timeIntervalSince1970: 1_760_000_000),
+            reason: "missed_day",
+            createdAt: Date(timeIntervalSince1970: 1_760_000_000)
+        )
+    }
+
+    static func xpSummary(level: Int = 2, into: Int = 150, toNext: Int = 350) -> XPSummary {
+        XPSummary(
+            xpTotal: (level - 1) * (into + toNext) + into,
+            level: level,
+            xpIntoLevel: into,
+            xpToNextLevel: toNext,
+            transactions: []
+        )
+    }
+
     static func leaderboard(isFinal: Bool = false, entries: [LeaderboardEntry] = []) -> Leaderboard {
         Leaderboard(
             challengeId: UUID(),

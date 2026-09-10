@@ -479,7 +479,14 @@ class TestAcceptance:
     async def test_the_opponent_only_enters_the_challenge_on_acceptance(
         self, client, register_actor, create_group, join_group, db_session: AsyncSession
     ) -> None:
-        """Which is also what makes the challenger's `joined_at` earlier — tie-break 4."""
+        """The opponent is not in the backing challenge until they accept.
+
+        Asserted as membership, not as `joined_at` ordering. `joined_at` defaults to
+        `now()`, which in Postgres is *transaction* time — and this fixture runs the whole
+        test in one transaction, so both rows carry an identical timestamp and any
+        ORDER BY over it is arbitrary. The previous version asserted that order and passed
+        only by luck of row layout; it failed under a randomised test order.
+        """
         (alpha, bravo), group = await _squad(client, register_actor, create_group, join_group)
         battle = (await _create_battle(client, alpha, bravo, group)).json()
         challenge_id = (
@@ -487,17 +494,28 @@ class TestAcceptance:
                 select(Battle.challenge_id).where(Battle.id == uuid.UUID(battle["id"]))
             )
         ).scalar_one()
+        # Before acceptance: the challenger alone.
+        before = (
+            await db_session.execute(
+                select(ChallengeParticipant.user_id).where(
+                    ChallengeParticipant.challenge_id == challenge_id
+                )
+            )
+        ).scalars().all()
+        assert list(before) == [alpha.user_id]
+
         await client.post(f"/api/v1/battles/{battle['id']}/accept", headers=bravo.headers)
 
-        rows = (
+        after = (
             await db_session.execute(
-                select(ChallengeParticipant)
-                .where(ChallengeParticipant.challenge_id == challenge_id)
-                .order_by(ChallengeParticipant.joined_at.asc())
+                select(ChallengeParticipant.user_id).where(
+                    ChallengeParticipant.challenge_id == challenge_id
+                )
             )
         ).scalars().all()
 
-        assert [row.user_id for row in rows] == [alpha.user_id, bravo.user_id]
+        assert set(after) == {alpha.user_id, bravo.user_id}
+        assert len(after) == 2
 
 
 class TestScoring:

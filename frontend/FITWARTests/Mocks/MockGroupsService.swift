@@ -60,6 +60,9 @@ final class MockChallengesService: ChallengesServiceProtocol, @unchecked Sendabl
     var joinResult: Result<ChallengeDetail, Error> = .failure(APIError.unknown("not configured"))
     var leaveError: Error?
     var todayResult: Result<DailyProgress, Error> = .failure(APIError.unknown("not configured"))
+    /// Per-challenge override, for tests where two challenges must be in different
+    /// states — which is exactly the case Home's "lead with something to do" rule needs.
+    var todayHandler: ((UUID) -> DailyProgress)?
 
     private(set) var requestedStatuses: [ChallengeStatus?] = []
     private(set) var createdRequests: [CreateChallengeRequest] = []
@@ -101,7 +104,8 @@ final class MockChallengesService: ChallengesServiceProtocol, @unchecked Sendabl
     }
 
     func fetchTodayProgress(challengeId: UUID) async throws -> DailyProgress {
-        try todayResult.get()
+        if let todayHandler { return todayHandler(challengeId) }
+        return try todayResult.get()
     }
 }
 
@@ -165,7 +169,8 @@ enum Fixture {
         status: ChallengeStatus = .active,
         dayIndex: Int = 6,
         durationDays: Int = 30,
-        participantCount: Int = 8
+        participantCount: Int = 8,
+        myStatus: ParticipantStatus? = .active
     ) -> ChallengeSummary {
         ChallengeSummary(
             id: id,
@@ -179,7 +184,7 @@ enum Fixture {
             dayIndex: dayIndex,
             durationDays: durationDays,
             participantCount: participantCount,
-            myStatus: .active
+            myStatus: myStatus
         )
     }
 
@@ -236,16 +241,21 @@ enum Fixture {
         )
     }
 
-    static func dailyProgress(status: DailyProgressStatus = .pending) -> DailyProgress {
+    static func dailyProgress(
+        status: DailyProgressStatus = .pending,
+        dayIndex: Int = 6,
+        target: Decimal = 10_000,
+        unit: String = "steps"
+    ) -> DailyProgress {
         DailyProgress(
             challengeDay: Date(timeIntervalSince1970: 1_760_000_000),
-            dayIndex: 6,
+            dayIndex: dayIndex,
             status: status,
-            target: 10_000,
-            unit: "steps",
+            target: target,
+            unit: unit,
             windowStartAt: Date(timeIntervalSince1970: 1_760_000_000),
             deadlineAt: Date(timeIntervalSince1970: 1_760_086_400),
-            completedAt: nil
+            completedAt: status == .completed ? Date(timeIntervalSince1970: 1_760_050_000) : nil
         )
     }
 }

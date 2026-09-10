@@ -1516,3 +1516,97 @@ realtime tests built a signed-out `SessionManager` whose missing access token ma
 `connectRealtime()` return before opening anything — so the assertions were checking
 nothing. All four are fixed and the CI-facing command is now `xcodebuild test`, which
 rebuilds.
+
+
+---
+
+## 26. First Session and Today's Mission (Beta UX Fix #1)
+
+A product increment, not a phase. Two of the three problems the beta-readiness walkthrough
+found; the third (inert join codes) is untouched.
+
+### 26.1 Onboarding was skipped for every new account
+
+`AuthFlowView` signalled "just registered" from an `.onChange`, and `RootView` swaps that
+view out the moment the session becomes `.authenticated` — so the callback raced its own
+teardown and lost. The same handler also fired on *login* from a pushed screen, so a
+returning user could be shown onboarding instead. Neither direction worked.
+
+The consequence was not cosmetic: the HealthKit permission step never ran, so verification
+was dead until the user happened to reach `WARS → challenge → Verify` and find "Connect
+Apple Health" three levels down.
+
+**Fix: stop inferring it from a UI event and read it from the server.** `UserProfile`
+gains `onboarding_stage` (`discipline | health | profile | completed`) and
+`onboarding_completed_at`; `AppRouteViewModel` resolves the route from `GET /me` in a view
+that stays mounted across the transition. A device flag would have been simpler and wrong
+— it is lost on reinstall, absent on a second device, and easy to clear on logout, each of
+which drags a returning user back through onboarding.
+
+Three details that make it behave:
+
+- **Registration opts in; everything else opts out.** The column defaults to `COMPLETED`
+  and only `UserRepository.create` writes `DISCIPLINE`. The migration backfills existing
+  profiles as completed — re-onboarding accounts that already work would be a regression
+  introduced by a bug fix.
+- **Progress is written after every step**, so quitting mid-flow resumes at the same step
+  rather than restarting. A failed write does not block the UI; the user resumes at most
+  one step earlier.
+- **Completion is recorded only after the display name saves.** Marking it first would
+  strand a failed save with a half-finished profile and no way back.
+
+### 26.2 The HealthKit step never called HealthKit
+
+Even when onboarding did run, it called `UnimplementedHealthConnector` — a Phase 2
+stand-in that makes no HealthKit call and honestly reports `.notDetermined`. The step now
+uses the real Phase 4 `HealthKitServicing`, asking for the metric matching the discipline
+just chosen (disciplines HealthKit cannot measure fall back to steps, since those
+challenges are video-verified anyway and requesting an unsupported type throws rather than
+prompting).
+
+The flow continues whatever the outcome, because iOS never reports whether *read* access
+was granted (§21.5) — there is no denial to branch on, and blocking on an unknowable
+answer would strand the user. What the app can honestly say is said later, on Verify.
+
+The Health Connect button is removed: Android-only, never implemented on iOS, and wired to
+"continue" in the prototype. Shipping a button that cannot work is the mistake §20.8
+refused for Sign in with Apple.
+
+### 26.3 Home shows today's mission
+
+`HomeView` was a 19-line placeholder rendering a fixed empty state on every launch, so the
+daily mission lived four taps away and a returning user had to remember the path.
+
+It now leads with one card: challenge name, today's target, day counter, streak, rank, and
+a `LOG TODAY` button that opens the existing Verify sheet. Every value is server-computed
+and read from endpoints that already existed (`GET /challenges?status=active`,
+`/progress/today`, `/challenges/{id}/me`, `/me/xp`) — **Home creates no game state**, and
+done/not-done is the server's `day_status`, never a comparison the client makes.
+
+`TabView` keeps every tab alive, so `.task` fires once and never again; Home reloads when
+its tab is selected, or yesterday's answer would still be on screen after logging a
+mission elsewhere.
+
+The empty state names what a war is and offers the two things that fix it — start one, or
+join with a code. The fabricated landing-screen statistics ("12.4k ACTIVE WARS · 61%
+SURVIVAL RATE") are deleted: inventing social proof for ten people who know it is a
+private beta undermines every real number beside it.
+
+### 26.4 Raw validation text no longer reaches users
+
+Mistyping an email during signup showed `body.email: value is not a valid email address:
+The part after the @-sign is a special-use or reserved name…` — field path and library
+vocabulary, on the first screen of the product.
+
+`ValidationMessagePresentation` maps the failure to product copy by the field it names.
+The wire format is unchanged and the raw detail is now also logged server-side
+(`request_validation_failed`), so nothing is hidden from developers by improving what a
+person reads.
+
+### 26.5 Terminology
+
+The design freezes the nav as `HOME · WARS · BATTLES · SQUAD · YOU` and pairs the WARS tab
+with the screen it calls "Challenges list". The tab is frozen, so the screen title moved to
+match it — one word for one object. "Squads" is left alone: it is the plural of the frozen
+`SQUAD`, not a different word, and renaming every occurrence of "challenge" across error
+copy would be the broad refactor this increment is not.

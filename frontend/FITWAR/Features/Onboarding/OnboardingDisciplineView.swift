@@ -13,7 +13,7 @@ struct OnboardingDisciplineView: View {
             LazyVGrid(columns: columns, spacing: FWSpacing.sm) {
                 ForEach(viewModel.disciplines, id: \.self) { discipline in
                     Button {
-                        viewModel.pickDiscipline(discipline)
+                        Task { await viewModel.pickDiscipline(discipline) }
                     } label: {
                         VStack(alignment: .leading, spacing: FWSpacing.xxl) {
                             RoundedRectangle(cornerRadius: FWRadius.small, style: .continuous)

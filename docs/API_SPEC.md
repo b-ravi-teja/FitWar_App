@@ -36,8 +36,8 @@ Design note: onboarding's "I already have an account" now routes to the real Log
 
 | Method & Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /me` ✅ | Required | — | `{ id, email, display_name, avatar_media_id, xp_total, notification_preferences }` — **no `level`/`xp_to_next_level`/`current_streak`**: those need the XP/Streak/Challenge domains, which don't exist yet. Not silently dropped — deliberately deferred | — |
-| `PATCH /me` ✅ | Required | `{ display_name?, notification_preferences? }` — **no `avatar_media_id`**: `MediaAsset` doesn't exist until the Media phase, so there's nothing to set it to yet | `200` updated profile — backs Onboarding's profile step and Settings' future Account/Notification sections (design spec §20.9) | `422` |
+| `GET /me` ✅ | Required | — | `{ id, email, display_name, avatar_media_id, xp_total, notification_preferences, onboarding_stage, onboarding_completed_at }` — **no `level`/`xp_to_next_level`/`current_streak`**: those need the XP/Streak/Challenge domains, which don't exist yet. Not silently dropped — deliberately deferred | — |
+| `PATCH /me` ✅ | Required | `{ display_name?, notification_preferences?, onboarding_stage? }` — **no `avatar_media_id`**: `MediaAsset` doesn't exist until the Media phase, so there's nothing to set it to yet | `200` updated profile — backs Onboarding's profile step and Settings' future Account/Notification sections (design spec §20.9) | `422` |
 | `DELETE /me` | Required | — | `204` (soft-delete, see Phase 0 §7) — **not yet implemented**, no screen needs it before the Settings phase | — |
 | `GET /me/xp` ✅ | Required | — | `{ xp_total, level, xp_into_level, xp_to_next_level, transactions: [{ id, amount, reason, created_at }] }` (most recent 50). **Level is server-computed** (ADR 0008) — the client renders it and never derives it. The ledger is the source of truth and `xp_total` its transactionally-synced projection (§3.2). Entries are strictly positive: a missed day never debits XP (ADR 0002). **Not cursor-paginated** — a capped recent list is what the XP screen shows, and a cursor would be unused surface | — |
 | `GET /me/achievements` | Required | — | list of unlocked achievements | — (not yet implemented — Achievements/XP phase) |
@@ -45,6 +45,16 @@ Design note: onboarding's "I already have an account" now routes to the real Log
 | `GET /me/health-connections` ✅ **[added]** | Required | — | `{ id, provider, status, last_synced_at, connected_at }[]` — the caller's links only. `last_synced_at` is the server's own observation of evidence arriving, never a client claim about permissions | — |
 | `POST /me/health-connections` ✅ | Required | `{ provider }` (`apple_health` \| `health_connect`) | `201` connection. Idempotent — re-connecting an existing link revives it rather than failing, which is what the client needs when a user re-grants permission in iOS Settings | `422` |
 | `DELETE /me/health-connections/{id}` ✅ | Required, owner | — | `204`, marks the link revoked | `404 HEALTH_CONNECTION_NOT_FOUND` — the same 404 another account's id produces, so this can't probe for valid ids |
+
+**Onboarding state.** `onboarding_stage` is `discipline \| health \| profile \| completed`
+and `onboarding_completed_at` is stamped once, when the stage first becomes `completed`.
+It lives on the server rather than the device so it survives reinstall, a second device
+and logout/login — the client asks where it left off instead of remembering. Registration
+sets `discipline`; every other path defaults to `completed`, and accounts predating the
+column were backfilled as completed so a bug fix could not re-onboard existing users.
+
+It is deliberately **not** competitive state: nothing in scoring, XP or standings reads
+it, which is why the client is allowed to advance it.
 
 ## Groups
 

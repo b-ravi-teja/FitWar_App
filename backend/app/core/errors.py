@@ -95,9 +95,21 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(RequestValidationError)
-    async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    async def handle_validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         detail = "; ".join(
             f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()
+        )
+        # Logged explicitly so a 422 is diagnosable from the server side alone. The
+        # response body keeps the same developer-facing detail it always had — clients
+        # map it to product copy for display (iOS: `ValidationMessagePresentation`), so
+        # nothing here is hidden from developers by improving what users read.
+        logger.info(
+            "request_validation_failed",
+            route=request.url.path,
+            method=request.method,
+            fields=[".".join(str(loc) for loc in e["loc"]) for e in exc.errors()],
         )
         return _problem_response(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

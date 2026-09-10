@@ -35,11 +35,6 @@ struct WelcomeLandingView: View {
             VStack(alignment: .leading, spacing: FWSpacing.lg) {
                 Rectangle().fill(FWColor.line).frame(height: 1)
 
-                HStack(spacing: FWSpacing.xxl) {
-                    statColumn(value: "12.4k", label: "ACTIVE WARS")
-                    statColumn(value: "61%", label: "SURVIVAL RATE")
-                }
-
                 FITWARPrimaryButton(title: "GET STARTED", action: onGetStarted)
                     .padding(.top, FWSpacing.xxs)
 
@@ -52,14 +47,4 @@ struct WelcomeLandingView: View {
         .background(FWColor.background)
     }
 
-    private func statColumn(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value).font(FWTypography.titleLarge).foregroundStyle(FWColor.textPrimary)
-            Text(label)
-                .font(FWTypography.metaLabel)
-                .tracking(FWTracking.metaLabel)
-                .foregroundStyle(FWColor.textDim2)
-        }
-        .accessibilityElement(children: .combine)
-    }
 }

@@ -27,6 +27,8 @@ def _to_response(user: User) -> UserResponse:
         avatar_media_id=user.profile.avatar_media_id,
         xp_total=user.profile.xp_total,
         notification_preferences=user.profile.notification_preferences,
+        onboarding_stage=user.profile.onboarding_stage,
+        onboarding_completed_at=user.profile.onboarding_completed_at,
     )
 
 
@@ -53,6 +55,7 @@ async def patch_me(
         current_user,
         display_name=body.display_name,
         notification_preferences=body.notification_preferences,
+        onboarding_stage=body.onboarding_stage,
     )
     return _to_response(updated)
 

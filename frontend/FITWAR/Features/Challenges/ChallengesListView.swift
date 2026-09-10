@@ -171,7 +171,7 @@ struct ChallengesListView: View {
 
     private var header: some View {
         HStack {
-            Text("Challenges")
+            Text("Wars")
                 .font(FWTypography.displayMedium)
                 .foregroundStyle(FWColor.textPrimary)
             Spacer()

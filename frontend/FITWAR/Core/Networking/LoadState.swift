@@ -84,10 +84,68 @@ enum DomainErrorPresentation {
             case "INVALID_STATE_TRANSITION":
                 return "That isn't possible from the challenge's current state."
             case "VALIDATION_ERROR":
-                return detail
+                return ValidationMessagePresentation.message(for: detail)
             default:
                 return detail
             }
         }
+    }
+}
+
+
+/// Turns FastAPI/Pydantic validation text into something a person can act on.
+///
+/// The server's `detail` is developer-facing and reads like
+/// `body.email: value is not a valid email address: The part after the @-sign is a
+/// special-use or reserved name that cannot be used with email.` — field path, library
+/// vocabulary and all. That string reached users during the beta walkthrough, on the very
+/// first screen of the product.
+///
+/// This maps it to product copy by the *field* it names, which is the stable part; the
+/// raw text is untouched on the wire and still logged server-side, so nothing is hidden
+/// from developers. An unmapped field falls back to a plain, honest sentence rather than
+/// leaking the original.
+enum ValidationMessagePresentation {
+    static func message(for detail: String) -> String {
+        // The server joins multiple failures with "; " — the first is the one the user
+        // should fix first, and listing all of them at once is noise on a small screen.
+        let first = detail.split(separator: ";").first.map(String.init) ?? detail
+        let field = fieldName(in: first)
+        let lower = first.lowercased()
+
+        switch field {
+        case "email":
+            return "Please enter a valid email address."
+        case "password":
+            return lower.contains("at least") || lower.contains("short")
+                ? "Passwords need at least 8 characters."
+                : "Please check your password."
+        case "display_name", "displayname", "name":
+            return lower.contains("at most") || lower.contains("long")
+                ? "That name is too long. Try a shorter one."
+                : "Please enter a name."
+        case "content":
+            return "Type a message before sending."
+        case "join_code", "joincode":
+            return "That code doesn't look right. Check it and try again."
+        case "target_value", "targetvalue":
+            return "Enter a daily target greater than zero."
+        case "duration_days", "durationdays":
+            return "Pick a length between 1 and 365 days."
+        case "timezone":
+            return "That timezone isn't recognised."
+        default:
+            return "Some details need fixing. Check the form and try again."
+        }
+    }
+
+    /// `body.email: value is not…` → `email`. Returns "" when the detail carries no
+    /// field path, which is what the generic fallback is for.
+    private static func fieldName(in detail: String) -> String {
+        guard let path = detail.split(separator: ":").first else { return "" }
+        let parts = path.split(separator: ".").map(String.init)
+        // Drop pydantic's location prefix ("body", "query", "path").
+        let meaningful = parts.filter { !["body", "query", "path"].contains($0.lowercased()) }
+        return meaningful.last?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
     }
 }

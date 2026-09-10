@@ -21,7 +21,7 @@ struct ProfileViewModelTests {
     }
 
     @Test func loadSuccessPopulatesUser() async {
-        let user = User(id: UUID(), email: "ravi@example.com", displayName: "Ravi", avatarMediaId: nil, xpTotal: 0, notificationPreferences: nil)
+        let user = UserFixtures.user(xpTotal: 0)
         let sut = makeSUT(fetchResult: .success(user))
 
         await sut.load()
@@ -47,7 +47,7 @@ struct ProfileViewModelTests {
         /// about a user's level is exactly the bug the change prevents.
         let games = MockGameService()
         games.xpResult = .success(GameFixtures.xp(total: 2500, level: 6))
-        let sut = makeSUT(fetchResult: .success(User(id: UUID(), email: "ravi@example.com", displayName: "Ravi", avatarMediaId: nil, xpTotal: 2500, notificationPreferences: nil)), games: games)
+        let sut = makeSUT(fetchResult: .success(UserFixtures.user(xpTotal: 2500)), games: games)
 
         await sut.load()
 
@@ -58,7 +58,7 @@ struct ProfileViewModelTests {
         /// The badge degrades; the screen still renders.
         let games = MockGameService()
         games.xpResult = .failure(APIError.noConnection)
-        let sut = makeSUT(fetchResult: .success(User(id: UUID(), email: "ravi@example.com", displayName: "Ravi", avatarMediaId: nil, xpTotal: 2500, notificationPreferences: nil)), games: games)
+        let sut = makeSUT(fetchResult: .success(UserFixtures.user(xpTotal: 2500)), games: games)
 
         await sut.load()
 

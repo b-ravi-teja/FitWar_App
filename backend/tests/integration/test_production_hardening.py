@@ -408,21 +408,35 @@ class TestMediaCleanupFailureHandling:
         service = MediaService(db_session)
 
         class FlakyStorage:
+            """Fails the first delete of *this* asset, then succeeds.
+
+            Keyed to one storage key rather than counting calls: `run_cleanup` sweeps
+            every due object, so a call-counting stub would spend its single failure on
+            whichever unrelated row the batch happened to contain first — which is how
+            this test failed only under a randomised order.
+            """
+
             def __init__(self) -> None:
                 self.attempts = 0
 
             def delete(self, *, key: str) -> bool:
+                if key != asset.storage_key:
+                    return True
                 self.attempts += 1
-                return self.attempts > 1  # fails once, then succeeds
+                return self.attempts > 1
 
         storage = FlakyStorage()
         service._storage = storage  # type: ignore[assignment]
 
-        assert await service.run_cleanup() == 0
-        assert await service.run_cleanup() == 1
+        await service.run_cleanup()
+        await db_session.refresh(asset)
+        assert asset.object_deleted_at is None, "a failed delete was recorded as done"
+
+        await service.run_cleanup()
         await db_session.refresh(asset)
         assert asset.status is MediaStatus.EXPIRED
         assert asset.object_deleted_at is not None
+        assert storage.attempts == 2
 
     async def test_one_failure_does_not_abort_the_rest_of_the_batch(
         self, client, register_actor, db_session: AsyncSession
@@ -439,11 +453,12 @@ class TestMediaCleanupFailureHandling:
                 return key != bad.storage_key
 
         service._storage = SelectiveStorage()  # type: ignore[assignment]
-        deleted = await service.run_cleanup()
+        await service.run_cleanup()
 
+        # Asserted on the two assets under test, not on a global count: the sweep also
+        # picks up whatever else is due, which is not this test's business.
         await db_session.refresh(bad)
         await db_session.refresh(good)
-        assert deleted >= 1
         assert bad.object_deleted_at is None
         assert good.object_deleted_at is not None
 

@@ -18,6 +18,20 @@ class UserStatus(enum.StrEnum):
     DELETED = "deleted"
 
 
+class OnboardingStage(enum.StrEnum):
+    """How far a user has got through first-run onboarding.
+
+    Server-backed rather than a device flag so the answer survives reinstall, a second
+    device, and logout/login — the client asks where it left off instead of remembering.
+    `COMPLETED` is terminal; the stages before it name the step still to be shown.
+    """
+
+    DISCIPLINE = "discipline"
+    HEALTH = "health"
+    PROFILE = "profile"
+    COMPLETED = "completed"
+
+
 class User(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __tablename__ = "user"
 
@@ -46,6 +60,16 @@ class UserProfile(Base):
     avatar_media_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     xp_total: Mapped[int] = mapped_column(default=0, nullable=False)
     notification_preferences: Mapped[dict[str, bool] | None] = mapped_column(JSONB, nullable=True)
+    # First-run onboarding progress. Set to DISCIPLINE when a profile is created by
+    # registration; accounts that predate this column were backfilled as COMPLETED by the
+    # migration, because they already have working accounts and re-onboarding them would
+    # be a regression, not a fix.
+    onboarding_stage: Mapped[OnboardingStage] = mapped_column(
+        SAEnum(OnboardingStage, name="onboarding_stage", native_enum=False, length=16),
+        default=OnboardingStage.COMPLETED,
+        nullable=False,
+    )
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         nullable=False, server_default=func.now(), onupdate=lambda: datetime.now(UTC)
     )
