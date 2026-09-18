@@ -93,7 +93,12 @@ async def run(base_url: str, email: str, password: str) -> Results:
                 tokens = resp.json()
                 r.ok("auth: login returned tokens")
             else:
-                r.fail("auth: login", f"status={resp.status_code}")
+                # Include the server's own explanation on a 4xx. A bare status here sends
+                # you looking for an outage when the real answer is usually that
+                # SMOKE_EMAIL is not a deliverable-looking address (special-use domains
+                # like .invalid and .test are rejected) or the password is too short.
+                detail = resp.text[:200] if resp.status_code < 500 else ""
+                r.fail("auth: login", f"status={resp.status_code} {detail}".strip())
                 return r
         except Exception as exc:
             r.fail("auth: login", f"{type(exc).__name__}: {exc}")

@@ -93,8 +93,22 @@ made by hand becomes drift that `alembic check` will fail on.
 ### 2.2 Upstash — the standard Redis protocol, not the REST API
 
 Copy the **`rediss://`** URL (TLS). `redis-py` handles it with no code change —
-`Redis.from_url` reads the scheme. Do not use the REST API: FITWAR uses Redis pub/sub for
-realtime, and the REST API has no pub/sub.
+`Redis.from_url` reads the scheme.
+
+**Do not configure the REST API.** The console shows `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` prominently, and they are the wrong thing here: FITWAR uses
+Redis **pub/sub** for realtime (`app/core/realtime.py`), and the REST API has no pub/sub.
+
+The two are related, which is a useful shortcut and a trap. The REST token doubles as the
+Redis password, and the REST URL's host is the Redis host, so:
+
+```
+REST:  https://<name>.upstash.io  +  token
+Redis: rediss://default:<token>@<name>.upstash.io:6379
+```
+
+Verified working, pub/sub included. TLS is mandatory — `redis://` on port 6379 is closed
+by the server immediately.
 
 ### 2.3 Cloudflare R2 — private bucket, and a genuine incompatibility
 
@@ -175,7 +189,7 @@ actually gates a production deploy.
 | `STAGING_STORAGE_ACCESS_KEY_ID` | R2 token access key |
 | `STAGING_STORAGE_SECRET_ACCESS_KEY` | R2 token secret |
 | `STAGING_EMAIL_API_KEY` | Resend API key |
-| `STAGING_SMOKE_EMAIL` | e.g. `smoke@<your-domain>` |
+| `STAGING_SMOKE_EMAIL` | e.g. `smoke@<your-domain>` — a normal-looking domain; `EmailStr` rejects special-use TLDs like `.invalid` and `.test` with a 422 |
 | `STAGING_SMOKE_PASSWORD` | `openssl rand -base64 24` |
 | `RENDER_API_KEY` | Render API key |
 | `RENDER_STAGING_SERVICE_ID` | `srv-…` |
@@ -360,6 +374,24 @@ minutes problem.
 Two of these will bite before anything else does: Upstash's 500K commands with rate
 limiting failing closed, and GitHub Actions minutes on a private repo if you run the
 15-minute sweep from CI.
+
+## 9a. What has been verified against real services
+
+As of commit `86732cb` + this one, run from a laptop rather than from Render:
+
+| Checked | Result |
+|---|---|
+| Supabase session pooler, TLS | Connected — PostgreSQL 17.6, IPv4, prepared statements fine |
+| Full Alembic history on an empty database | 7 revisions applied, `alembic check` clean |
+| Schema | 20 tables, 30 FKs, 55 indexes, 13 unique constraints, 0 naive timestamps |
+| `uq_battle_live_pair` partial index | Present with the uppercase enum predicate (the Phase 7 fix) |
+| Upstash over `rediss://` | Connected, PING and pub/sub both working |
+| Production image, `APP_ENV=staging`, against both | `/health` 200, all 13 smoke checks pass |
+| Redis unreachable | `/health` 503 and login 429 — fails closed, as configured |
+
+Not yet verified against a real service: Cloudflare R2, Render, Resend, and anything over
+a public HTTPS hostname (the WebSocket check above ran over plain HTTP to a local
+container, so it proves the handshake and pub/sub, not TLS termination).
 
 ## 10. First deploy
 
